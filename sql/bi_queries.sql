@@ -9,10 +9,46 @@ USE dw_matriculas_col;
 -- Propósito: Evidenciar la centralización del acceso a la educación.
 -- Visualización Sugerida: Mapa de Calor (Choropleth Map) o Gráfico de Treemap.
 -- ------------------------------------------------------------------------------
-SELECT 
-    du.departamento,
+SELECT
+    CASE du.departamento
+        WHEN 'bogota' THEN 'Bogotá, Colombia'
+        WHEN 'antioquia' THEN 'Antioquia, Colombia'
+        WHEN 'valle del cauca' THEN 'Valle del Cauca, Colombia'
+        WHEN 'atlantico' THEN 'Atlántico, Colombia'
+        WHEN 'santander' THEN 'Santander, Colombia'
+        WHEN 'bolivar' THEN 'Bolívar, Colombia'
+        WHEN 'cordoba' THEN 'Córdoba, Colombia'
+        WHEN 'norte de santander' THEN 'Norte de Santander, Colombia'
+        WHEN 'boyaca' THEN 'Boyacá, Colombia'
+        WHEN 'narino' THEN 'Nariño, Colombia'
+        WHEN 'tolima' THEN 'Tolima, Colombia'
+        WHEN 'magdalena' THEN 'Magdalena, Colombia'
+        WHEN 'cundinamarca' THEN 'Cundinamarca, Colombia'
+        WHEN 'cesar' THEN 'Cesar, Colombia'
+        WHEN 'huila' THEN 'Huila, Colombia'
+        WHEN 'sucre' THEN 'Sucre, Colombia'
+        WHEN 'cauca' THEN 'Cauca, Colombia'
+        WHEN 'meta' THEN 'Meta, Colombia'
+        WHEN 'caldas' THEN 'Caldas, Colombia'
+        WHEN 'risaralda' THEN 'Risaralda, Colombia'
+        WHEN 'choco' THEN 'Chocó, Colombia'
+        WHEN 'quindio' THEN 'Quindío, Colombia'
+        WHEN 'casanare' THEN 'Casanare, Colombia'
+        WHEN 'caqueta' THEN 'Caquetá, Colombia'
+        WHEN 'putumayo' THEN 'Putumayo, Colombia'
+        WHEN 'la guajira' THEN 'La Guajira, Colombia'
+        WHEN 'arauca' THEN 'Arauca, Colombia'
+        WHEN 'guaviare' THEN 'Guaviare, Colombia'
+        WHEN 'amazonas' THEN 'Amazonas, Colombia'
+        WHEN 'vichada' THEN 'Vichada, Colombia'
+        WHEN 'guainia' THEN 'Guainía, Colombia'
+        WHEN 'vaupes' THEN 'Vaupés, Colombia'
+        WHEN 'san andres y providencia' THEN 'San Andrés y Providencia, Colombia'
+        ELSE CONCAT(du.departamento, ', Colombia')
+    END AS departamento_oficial,
     SUM(fm.total_matriculados) AS total_estudiantes,
-    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS porcentaje_participacion_nacional
+    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS 
+    porcentaje_participacion_nacional
 FROM fact_matriculas fm
 INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
 GROUP BY du.departamento
