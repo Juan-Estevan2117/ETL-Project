@@ -1,6 +1,9 @@
 -- ==============================================================================
+-- CONSULTAS PARA BUSINESS INTELLIGENCE (BI) Y DASHBOARDS
 -- Escenario de Negocio: Brechas de Acceso a la Educación Superior (ODS 4)
 -- ==============================================================================
+-- Estas consultas están diseñadas para conectarse directamente desde 
+-- herramientas como Power BI, Tableau o Looker Studio hacia el Data Warehouse.
 
 USE dw_matriculas_col;
 
@@ -47,12 +50,11 @@ SELECT
         ELSE CONCAT(du.departamento, ', Colombia')
     END AS departamento_oficial,
     SUM(fm.total_matriculados) AS total_estudiantes,
-    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS 
-    porcentaje_participacion_nacional
+    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS participacion_nacional_pct
 FROM fact_matriculas fm
 INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
 GROUP BY du.departamento
-ORDER BY total_estudiantes DESC;
+ORDER BY SUM(fm.total_matriculados) DESC;
 
 
 -- ------------------------------------------------------------------------------
@@ -61,18 +63,19 @@ ORDER BY total_estudiantes DESC;
 -- Visualización Sugerida: Gráfico de Barras Apiladas 100% o Gráfico de Pirámide.
 -- ------------------------------------------------------------------------------
 SELECT 
-    dp.area_conocimiento,
+    UPPER(dp.nucleo_basico) AS campo_de_estudio,
     SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) AS total_mujeres,
     SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END) AS total_hombres,
     ROUND(
         SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) / 
         NULLIF(SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END), 0) * 100
-    , 2) AS indice_paridad_mujeres_por_cada_100_hombres
+    , 2) AS indice_paridad
 FROM fact_matriculas fm
 INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
 INNER JOIN dim_demografia dd ON fm.sk_demografia = dd.sk_demografia
-GROUP BY dp.area_conocimiento
-ORDER BY indice_paridad_mujeres_por_cada_100_hombres DESC;
+GROUP BY dp.nucleo_basico
+ORDER BY SUM(fm.total_matriculados) DESC
+LIMIT 20;
 
 
 -- ------------------------------------------------------------------------------
@@ -81,12 +84,13 @@ ORDER BY indice_paridad_mujeres_por_cada_100_hombres DESC;
 -- Visualización Sugerida: Gráfico de Líneas con dos series (Público y Privado).
 -- ------------------------------------------------------------------------------
 SELECT 
-    dt.anio,
-    di.sector,
+    -- Convertimos el año entero (ej. 2015) en una fecha válida (2015-01-01) 
+    -- para que Looker Studio la reconozca como Dimensión de Tiempo obligatoria.
+    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
+    UPPER(di.sector) AS sector,
     SUM(fm.total_matriculados) AS total_matriculados
 FROM fact_matriculas fm
 INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
-INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
 GROUP BY dt.anio, di.sector
 ORDER BY dt.anio ASC, di.sector ASC;
 
@@ -102,13 +106,18 @@ SELECT
         WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
         ELSE 'Regiones Periféricas' 
     END AS zona_geografica,
-    dp.nivel_formacion,
+    UPPER(dp.nivel_formacion) AS nivel_de_formacion,
     SUM(fm.total_matriculados) AS volumen_matriculas
 FROM fact_matriculas fm
 INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
 INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
-GROUP BY zona_geografica, dp.nivel_formacion
-ORDER BY zona_geografica ASC, volumen_matriculas DESC;
+GROUP BY 
+    CASE 
+        WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
+        ELSE 'Regiones Periféricas' 
+    END, 
+    dp.nivel_formacion
+ORDER BY zona_geografica ASC, SUM(fm.total_matriculados) DESC;
 
 
 -- ------------------------------------------------------------------------------
@@ -117,14 +126,15 @@ ORDER BY zona_geografica ASC, volumen_matriculas DESC;
 -- Visualización Sugerida: Gráfico de Áreas Apiladas (Stacked Area Chart).
 -- ------------------------------------------------------------------------------
 SELECT 
-    dt.anio,
-    dp.metodologia,
+    -- Casteo a fecha oficial para gráficos de líneas de tiempo
+    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
+    UPPER(dp.metodologia) AS metodologia,
     SUM(fm.total_matriculados) AS total_estudiantes
 FROM fact_matriculas fm
 INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
 INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
 GROUP BY dt.anio, dp.metodologia
-ORDER BY dt.anio ASC, total_estudiantes DESC;
+ORDER BY dt.anio ASC, SUM(fm.total_matriculados) DESC;
 
 
 -- ------------------------------------------------------------------------------
@@ -134,8 +144,8 @@ ORDER BY dt.anio ASC, total_estudiantes DESC;
 -- Visualización Sugerida: Tabla Dinámica o Gráfico de Barras Horizontales.
 -- ------------------------------------------------------------------------------
 SELECT 
-    di.nombre_ies,
-    du.departamento AS departamento_principal,
+    UPPER(di.nombre_ies) AS nombre_institucion,
+    UPPER(du.departamento) AS departamento_principal,
     SUM(fm.total_matriculados) AS total_matriculas_universitarias
 FROM fact_matriculas fm
 INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
@@ -144,5 +154,5 @@ INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
 WHERE di.sector = 'oficial' -- Instituciones Públicas
     AND dp.nivel_formacion LIKE '%universitaria%' -- Solo programas profesionales/universitarios
 GROUP BY di.nombre_ies, du.departamento
-ORDER BY total_matriculas_universitarias DESC
+ORDER BY SUM(fm.total_matriculados) DESC
 LIMIT 10;
