@@ -83,10 +83,14 @@ LIMIT 20;
 -- Propósito: Monitorear si el estado está asumiendo la carga de la expansión educativa.
 -- Visualización Sugerida: Gráfico de Líneas con dos series (Público y Privado).
 -- ------------------------------------------------------------------------------
-SELECT
-	STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
-	UPPER(di.sector) AS sector,
-	SUM(fm.total_matriculados) AS total_matriculados
+SELECT 
+    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
+    CASE di.sector
+        WHEN '1' THEN 'OFICIAL'
+        WHEN '2' THEN 'PRIVADA'
+        ELSE 'OTRO'
+    END AS sector,
+    SUM(fm.total_matriculados) AS total_matriculados
 FROM fact_matriculas fm
 INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
 INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
@@ -105,7 +109,18 @@ SELECT
         WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
         ELSE 'Regiones Periféricas' 
     END AS zona_geografica,
-    UPPER(dp.nivel_formacion) AS nivel_de_formacion,
+    CASE dp.nivel_formacion
+        WHEN '1' THEN 'ESPECIALIZACIÓN'
+        WHEN '2' THEN 'MAESTRÍA'
+        WHEN '3' THEN 'DOCTORADO'
+        WHEN '4' THEN 'TÉCNICA PROFESIONAL'
+        WHEN '5' THEN 'TECNOLÓGICA'
+        WHEN '6' THEN 'UNIVERSITARIA'
+        WHEN '7' THEN 'ESPECIALIZACIÓN TÉCNICA'
+        WHEN '8' THEN 'ESPECIALIZACIÓN TECNOLÓGICA'
+        WHEN '10' THEN 'ESPECIALIDAD MÉDICO QUIRÚRGICA'
+        ELSE 'OTRO'
+    END AS nivel_de_formacion,
     SUM(fm.total_matriculados) AS volumen_matriculas
 FROM fact_matriculas fm
 INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
@@ -125,9 +140,17 @@ ORDER BY zona_geografica ASC, SUM(fm.total_matriculados) DESC;
 -- Visualización Sugerida: Gráfico de Áreas Apiladas (Stacked Area Chart).
 -- ------------------------------------------------------------------------------
 SELECT 
-    -- Casteo a fecha oficial para gráficos de líneas de tiempo
     STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
-    UPPER(dp.metodologia) AS metodologia,
+    CASE dp.metodologia
+        WHEN '1' THEN 'PRESENCIAL'
+        WHEN '2' THEN 'A DISTANCIA (TRADICIONAL)'
+        WHEN '3' THEN 'VIRTUAL'
+        WHEN '4' THEN 'A DISTANCIA (VIRTUAL)'
+        WHEN '5' THEN 'DUAL'
+        WHEN '7' THEN 'PRESENCIAL - VIRTUAL'
+        WHEN '9' THEN 'PRESENCIAL - A DISTANCIA'
+        ELSE 'OTRA'
+    END AS metodologia,
     SUM(fm.total_matriculados) AS total_estudiantes
 FROM fact_matriculas fm
 INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
@@ -150,8 +173,8 @@ FROM fact_matriculas fm
 INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
 INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
 INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
-WHERE di.sector = 'oficial' -- Instituciones Públicas
-    AND dp.nivel_formacion LIKE '%universitaria%' -- Solo programas profesionales/universitarios
+WHERE di.sector = '1' -- Instituciones Públicas
+    AND dp.nivel_formacion = '6' -- Solo programas profesionales/universitarios
 GROUP BY di.nombre_ies, du.departamento
 ORDER BY SUM(fm.total_matriculados) DESC
 LIMIT 10;
