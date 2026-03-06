@@ -1,0 +1,112 @@
+-- ==============================================================================
+-- Escenario de Negocio: Brechas de Acceso a la Educación Superior (ODS 4)
+-- ==============================================================================
+
+USE dw_matriculas_col;
+
+-- ------------------------------------------------------------------------------
+-- 1. KPI: Índice de Concentración de Matrículas (Top Departamentos vs Resto)
+-- Propósito: Evidenciar la centralización del acceso a la educación.
+-- Visualización Sugerida: Mapa de Calor (Choropleth Map) o Gráfico de Treemap.
+-- ------------------------------------------------------------------------------
+SELECT 
+    du.departamento,
+    SUM(fm.total_matriculados) AS total_estudiantes,
+    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS porcentaje_participacion_nacional
+FROM fact_matriculas fm
+INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
+GROUP BY du.departamento
+ORDER BY total_estudiantes DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 2. KPI: Tasa de Paridad de Género por Área de Conocimiento (Foco en STEM)
+-- Propósito: Identificar la brecha de género (ODS 5) en carreras científicas y técnicas.
+-- Visualización Sugerida: Gráfico de Barras Apiladas 100% o Gráfico de Pirámide.
+-- ------------------------------------------------------------------------------
+SELECT 
+    dp.area_conocimiento,
+    SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) AS total_mujeres,
+    SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END) AS total_hombres,
+    ROUND(
+        SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) / 
+        NULLIF(SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END), 0) * 100
+    , 2) AS indice_paridad_mujeres_por_cada_100_hombres
+FROM fact_matriculas fm
+INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
+INNER JOIN dim_demografia dd ON fm.sk_demografia = dd.sk_demografia
+GROUP BY dp.area_conocimiento
+ORDER BY indice_paridad_mujeres_por_cada_100_hombres DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 3. TENDENCIA: Crecimiento Histórico de Matrículas por Sector (Público vs Privado)
+-- Propósito: Monitorear si el estado está asumiendo la carga de la expansión educativa.
+-- Visualización Sugerida: Gráfico de Líneas con dos series (Público y Privado).
+-- ------------------------------------------------------------------------------
+SELECT 
+    dt.anio,
+    di.sector,
+    SUM(fm.total_matriculados) AS total_matriculados
+FROM fact_matriculas fm
+INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
+INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
+GROUP BY dt.anio, di.sector
+ORDER BY dt.anio ASC, di.sector ASC;
+
+
+-- ------------------------------------------------------------------------------
+-- 4. ANÁLISIS: Tipos de Formación en la "Periferia" vs "Capitales"
+-- Propósito: Descubrir si a las regiones alejadas solo llegan carreras técnicas
+--            mientras que las universitarias se quedan en las capitales.
+-- Visualización Sugerida: Gráfico de Columnas Agrupadas.
+-- ------------------------------------------------------------------------------
+SELECT 
+    CASE 
+        WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
+        ELSE 'Regiones Periféricas' 
+    END AS zona_geografica,
+    dp.nivel_formacion,
+    SUM(fm.total_matriculados) AS volumen_matriculas
+FROM fact_matriculas fm
+INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
+INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
+GROUP BY zona_geografica, dp.nivel_formacion
+ORDER BY zona_geografica ASC, volumen_matriculas DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 5. IMPACTO: Expansión de la Metodología Virtual y a Distancia a través de los años
+-- Propósito: Evaluar si la virtualidad está siendo el motor para democratizar el acceso.
+-- Visualización Sugerida: Gráfico de Áreas Apiladas (Stacked Area Chart).
+-- ------------------------------------------------------------------------------
+SELECT 
+    dt.anio,
+    dp.metodologia,
+    SUM(fm.total_matriculados) AS total_estudiantes
+FROM fact_matriculas fm
+INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
+INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
+GROUP BY dt.anio, dp.metodologia
+ORDER BY dt.anio ASC, total_estudiantes DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 6. TOP 10: Instituciones Públicas con Mayor Impacto en el Nivel Universitario
+-- Propósito: Identificar las universidades públicas que más sostienen la demanda 
+--            del país para posible asignación de presupuestos.
+-- Visualización Sugerida: Tabla Dinámica o Gráfico de Barras Horizontales.
+-- ------------------------------------------------------------------------------
+SELECT 
+    di.nombre_ies,
+    du.departamento AS departamento_principal,
+    SUM(fm.total_matriculados) AS total_matriculas_universitarias
+FROM fact_matriculas fm
+INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
+INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
+INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
+WHERE di.sector = 'oficial' -- Instituciones Públicas
+    AND dp.nivel_formacion LIKE '%universitaria%' -- Solo programas profesionales/universitarios
+GROUP BY di.nombre_ies, du.departamento
+ORDER BY total_matriculas_universitarias DESC
+LIMIT 10;
