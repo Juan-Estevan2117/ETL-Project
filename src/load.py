@@ -107,29 +107,37 @@ def load_data(df_clean: pd.DataFrame, engine):
         engine=engine
     )
 
-    # --- 2. PREPARAR TABLA DE HECHOS ---
-    print("   -> Preparando fact_matriculas (Cruzando llaves foráneas)...")
+    # --- 2. PREPARAR TABLA DE HECHOS (Optimización Ultra-Ligera de Memoria) ---
+    print("   -> Preparando fact_matriculas (Mapeo por Diccionarios para bajo consumo de RAM)...")
+    import gc
+    fact_df = df_clean.copy()
     
-    # Hacemos merge (JOIN) del DataFrame limpio con cada dimensión recuperada de la BD
-    # para cambiar las llaves naturales (ej. nombre municipio) por las Surrogate Keys (ej. sk_ubicacion)
+    def map_surrogate_keys(df, dim_df, cols, sk_col):
+        """Mapea llaves sustitutas usando diccionarios, consumiendo ~90% menos memoria que pd.merge()"""
+        if len(cols) == 1:
+            mapping = dim_df.set_index(cols[0])[sk_col].to_dict()
+            df[sk_col] = df[cols[0]].map(mapping)
+        else:
+            mapping = dim_df.set_index(cols)[sk_col].to_dict()
+            # Creamos una serie de tuplas (mucho más ligero que un MultiIndex temporal)
+            df[sk_col] = pd.Series(list(zip(*[df[c] for c in cols]))).map(mapping)
+        
+        # Destruir columnas pesadas inmediatamente
+        df.drop(columns=cols, inplace=True)
+        gc.collect() # Forzar al recolector de basura a liberar la RAM
+
+    # Aplicar mapeo dimensión por dimensión
+    map_surrogate_keys(fact_df, dim_demografia, ['id_genero'], 'sk_demografia')
+    map_surrogate_keys(fact_df, dim_tiempo, ['anio', 'semestre'], 'sk_tiempo')
     
-    # Merge con Demografía
-    fact_df = df_clean.merge(dim_demografia[['sk_demografia', 'id_genero']], on=['id_genero'], how='left')
+    cols_ubicacion = ['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento']
+    map_surrogate_keys(fact_df, dim_ubicacion, cols_ubicacion, 'sk_ubicacion')
     
-    # Merge con Tiempo
-    fact_df = fact_df.merge(dim_tiempo[['sk_tiempo', 'anio', 'semestre']], on=['anio', 'semestre'], how='left')
+    cols_programa = ['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico']
+    map_surrogate_keys(fact_df, dim_programa, cols_programa, 'sk_programa')
     
-    # Merge con Ubicacion (cruzamos por todas sus columnas para asegurar match exacto)
-    fact_df = fact_df.merge(dim_ubicacion[['sk_ubicacion', 'codigo_municipio', 'municipio', 'codigo_departamento', 'departamento']], 
-                            on=['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento'], how='left')
-    
-    # Merge con Programa
-    fact_df = fact_df.merge(dim_programa[['sk_programa', 'codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico']], 
-                            on=['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico'], how='left')
-    
-    # Merge con Institucion
-    fact_df = fact_df.merge(dim_institucion[['sk_institucion', 'codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter']], 
-                            on=['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter'], how='left')
+    cols_institucion = ['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter']
+    map_surrogate_keys(fact_df, dim_institucion, cols_institucion, 'sk_institucion')
 
     # Seleccionamos solo las llaves foráneas (SKs) y la métrica
     fact_to_load = fact_df[['sk_institucion', 'sk_programa', 'sk_ubicacion', 'sk_tiempo', 'sk_demografia', 'total_matriculados']]

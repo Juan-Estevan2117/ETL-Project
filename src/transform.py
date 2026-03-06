@@ -106,10 +106,11 @@ def clean_and_transform(df: pd.DataFrame) -> pd.DataFrame:
     # 5. Manejo de códigos y casteos forzados para coincidir con la BD
     df['codigo_snies'] = pd.to_numeric(df['codigo_snies'], errors='coerce').fillna(-1).astype(int)
     
-    # IMPORTANTE: En el archivo CSV original, nivel_formacion y metodologia vienen como números (IDs), 
-    # pero en tu script MySQL los definimos como VARCHAR(150) porque a futuro deberían contener texto.
-    # Por ahora, los forzaremos a string para que no choque el pd.merge() con la lectura de SQLAlchemy.
-    for col in ['nivel_formacion', 'metodologia']:
+    # IMPORTANTE: En el archivo CSV original, nivel_formacion, metodologia, sector y caracter 
+    # vienen como números (IDs), pero en tu script MySQL los definimos como VARCHAR porque 
+    # a futuro deberían contener texto.
+    # Por ahora, los forzaremos a string para que no choque el pd.merge() o el .map() con SQLAlchemy.
+    for col in ['nivel_formacion', 'metodologia', 'sector', 'caracter']:
         if col in df.columns:
             df[col] = df[col].astype(str)
     
