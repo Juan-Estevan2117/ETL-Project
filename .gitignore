@@ -13,6 +13,8 @@ env/
 # --- Datos (ETL) ---
 data/processed/*
 !data/processed/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
 !sql/.gitkeep
 !src/.gitkeep
 
