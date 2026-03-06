@@ -83,14 +83,13 @@ LIMIT 20;
 -- Propósito: Monitorear si el estado está asumiendo la carga de la expansión educativa.
 -- Visualización Sugerida: Gráfico de Líneas con dos series (Público y Privado).
 -- ------------------------------------------------------------------------------
-SELECT 
-    -- Convertimos el año entero (ej. 2015) en una fecha válida (2015-01-01) 
-    -- para que Looker Studio la reconozca como Dimensión de Tiempo obligatoria.
-    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
-    UPPER(di.sector) AS sector,
-    SUM(fm.total_matriculados) AS total_matriculados
+SELECT
+	STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
+	UPPER(di.sector) AS sector,
+	SUM(fm.total_matriculados) AS total_matriculados
 FROM fact_matriculas fm
 INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
+INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
 GROUP BY dt.anio, di.sector
 ORDER BY dt.anio ASC, di.sector ASC;
 
