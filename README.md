@@ -1,7 +1,8 @@
 # 🇨🇴 Observatorio Nacional de Brechas en Educación Superior (ODS 4)
 **Proyecto ETL - Primera Entrega | Ingeniería de Datos e Inteligencia Artificial**
 
-*Nicole Valeria Ruiz Valencia- Isabela Manchabajoy Padilla- Santiago Ituyan Figueroa- Juan Estevan Viera Cano*
+***Autores*:**
+*Nicole Valeria Ruiz Valencia ~ Isabela Manchabajoy Padilla ~ Santiago Ituyan Figueroa ~ Juan Estevan Viera Cano*
 
 ![Diagrama de Arquitectura](diagrams/architecture_diagram.svg)
 
