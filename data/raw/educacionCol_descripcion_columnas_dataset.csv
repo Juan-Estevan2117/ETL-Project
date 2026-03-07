@@ -1,0 +1,27 @@
+,,,,
+,Total Matriculados,Numero total de estudiantes matriculados,matriculados_2015,Número
+,Semestre,Semestre de reporte de la variable poblacional a un programa de educación superior,semestre,Número
+,Programa Académico,Nombre del Programa Académico,programa_acad_mico,Texto
+,Principal oSeccional,Identifica si el programa académico se ofrece en una seccional o sede principal,principal_oseccional,Texto
+,Núcleo Básico del Conocimiento (NBC),"Las áreas de conocimiento se organizan a su vez en NÚCLEOS BÁSICOS del conocimiento o clasificaciones de un área del conocimiento en sus campos, disciplinas o profesiones esenciales.",n_cleo_b_sico_del_conocimiento_nbc,Texto
+,Municipio dedomicilio de la IES,Descripción del municipio de domicilio de la Institución de Educación Superior,municipio_dedomicilio_de_la_ies,Texto
+,Municipio de oferta del programa,Descripción del municipio de domicilio del programa de Educación Superior,municipio_de_oferta_del_programa,Texto
+,Institución de Educación Superior (IES),Nombre de la Institución de Educación Superior (IES),instituci_n_de_educaci_n_superior_ies,Texto
+,IES PADRE,Código de la IES que agrupa sus seccionales,ies_padre,Número
+,Id_Sector,"Identifica el sector de la Institución, público o privado",id_sector,Número
+,Id_Nucleo,Código del Núcleo de conocimiento,id_nucleo,Texto
+,Id_Nivel_Formacion,Etapas de los niveles académicos del sistema de educación superior.,id_nivel_formacion,Número
+,Id_Nivel,Nivel Académico del programa (pregrado o posgrado),id_nivel,Número
+,Id_Metodologia,"Forma de enseñanza, los programas académicos ofrecidos",id_metodologia,Número
+,Id_Caracter,Naturaleza o vocación en el quehacer académico de una institución de educación superior.,id_caracter,Número
+,Id_Area,"Agrupación que se hace de los programas académicos, teniendo en cuenta cierta afinidad en los contenidos, en los campos específicos del conocimiento, en los campos de acción de la educación superior cuyos propósitos de formación conduzcan a la investigación o al desempeño de ocupaciones, profesiones y disciplinas.",id_area,Texto
+,Id Género,"Código de la característica natural biológica de nacimiento del estudiante reportado a la variable poblacional como aparece registrado en el documento de identidad. (1 Masculino - Hombre, 2 Femenino - Mujer)",id_g_nero,Número
+,Departamento de oferta del programa,Descripción del departamento de domicilio del programa de Educación Superior,departamento_de_oferta_del_programa,Texto
+,Departamento de domicilio de la IES,Descripción del departamento de domicilio de la Institución de Educación Superior,departamento_de_domicilio_de_la_ies,Texto
+,Código SNIES delprograma,Código SNIES asignado al programa académico,c_digo_snies_delprograma,Número
+,Código del Municipio(Programa),Código del municipio del domicilio del programa de Educación Superior,c_digo_del_municipio_programa,Texto
+,Código del Municipio(IES),Código del municipio del domicilio de la Institución de Educación Superior,c_digo_del_municipio_ies,Número
+,Código del Departamento(Programa),Código del departamento del domicilio del programa de Educación Superior,c_digo_del_departamento_programa,Texto
+,Código del departamento(IES),Código del departamento del domicilio de la Institución de Educación Superior,c_digo_del_departamento_ies,Número
+,Código de la Institución,Código de la Institución de Educación Superior,c_digo_de_la_instituci_n,Número
+,Año,Corresponde al año de reporte de la variable poblacional a un programa de educación superior.,a_o,Número
