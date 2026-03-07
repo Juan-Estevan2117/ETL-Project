@@ -1,5 +1,6 @@
 # 🇨🇴 Observatorio Nacional de Brechas en Educación Superior (ODS 4)
-**Proyecto ETL - Primera Entrega | Ingeniería de Datos e Inteligencia Artificial**
+**Proyecto ETL - Primera Entrega | Ingeniería de Datos e Inteligencia Artificial** R
+*Nicole Valeria Ruiz Valencia- Isabela Manchabajoy Padilla- Santiago Ituyan Figueroa- Juan Estevan Viera Cano*
 
 ![Diagrama de Arquitectura](diagrams/architecture_diagram.svg)
 
@@ -11,7 +12,7 @@ El objetivo de negocio es diseñar e implementar un **Data Warehouse histórico 
 Este proyecto atiende de forma directa la meta principal del **Objetivo de Desarrollo Sostenible (ODS) 4: Educación de Calidad**, garantizando el monitoreo del acceso equitativo a la educación técnica, tecnológica y universitaria.
 
 ## 2. Justificación del Dataset (Dataset Justification)
-Se seleccionó el dataset oficial de **"Estadísticas de Matrículas en Educación Superior" (SNIES)** provisto por el portal de Datos Abiertos del Gobierno de Colombia.
+Se seleccionó el dataset oficial de **"Estadísticas de Matrículas en Educación Superior" (SNIES)** provisto por el portal de Datos Abiertos del Gobierno de Colombia. Se tomó la descripcion de las columnas ofrecida por la pagina y se sintetizó en un .csv dentro de *data/raw/educacionCol_descripcion_columnas_dataset.csv".
 * **Volumen:** ~390,000 registros crudos.
 * **Granularidad:** Detalles de matrículas agrupadas por Año, Semestre, Institución, Programa, Municipio, Metodología y Género.
 * **¿Por qué este dataset?:** Es el *Single Source of Truth* a nivel gubernamental. Su riqueza en jerarquías geográficas e institucionales permite construir un esquema en estrella (*Star Schema*) robusto que responda exactamente a las necesidades del ODS 4.
@@ -54,7 +55,6 @@ Se conectó el Data Warehouse a Google Looker Studio para generar un dashboard i
 ### Prerrequisitos
 * Python 3.12+
 * Servidor MySQL (Local o Remoto).
-* El archivo de datos crudo debe estar ubicado en `data/raw/educacionCol.csv`. *(Ignorado en Git por su tamaño).*
 
 ### Configuración (Setup)
 1. **Crear y activar entorno virtual:**
@@ -66,14 +66,12 @@ Se conectó el Data Warehouse a Google Looker Studio para generar un dashboard i
 
 2. **Instalar dependencias:**
    ```bash
-   pip install pandas sqlalchemy pymysql python-dotenv
+   pip install -r requirements.txt
    ```
 
-3. **Preparar Base de Datos:**
-   Ejecuta el script de inicialización en tu entorno MySQL para crear el esquema y las tablas vacías:
-   ```bash
-   mysql -u tu_usuario -p < sql/init_dw_matriculas_col.sql
-   ```
+3. **Descargar el data set**
+   Descarga el dataset aquí: https://www.datos.gov.co/Educaci-n/MEN_MATRICULA_ESTADISTICA_ES/5wck-szir/about_data
+   y guardalo en la carpeta data/raw/educacionCol.csv
 
 4. **Variables de Entorno (.env):**
    Crea un archivo `.env` en la raíz del proyecto con tus credenciales locales:
@@ -88,9 +86,10 @@ Se conectó el Data Warehouse a Google Looker Studio para generar un dashboard i
 ### Ejecución
 Corre el pipeline principal. El script resolverá automáticamente las rutas relativas sin importar tu sistema operativo:
 ```bash
-python main.py
+python main.py # O el comando con el que ejecutas tus scripts de python
+python3 main.py
+py main.py 
 ```
-
 ## 7. Salida Esperada
 Al finalizar el pipeline, verás un log en terminal validando la carga de más de 200k hechos y se exportará un archivo `educacionCol_clean.csv` en `data/processed/` para validaciones manuales.
 

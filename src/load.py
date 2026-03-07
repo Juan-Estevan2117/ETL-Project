@@ -1,14 +1,23 @@
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+import gc
 
 def get_db_connection(user='root', password='', host='localhost', port='3306', database='dw_matriculas_col'):
     """
-    Crea y retorna una conexión engine de SQLAlchemy a MySQL.
-    Nota: Requiere tener instalado pymysql (pip install pymysql)
+    Establece una conexión con el motor de base de datos MySQL utilizando SQLAlchemy.
+
+    Args:
+        user (str): Nombre de usuario de la base de datos.
+        password (str): Contraseña del usuario.
+        host (str): Dirección IP o hostname del servidor MySQL.
+        port (str): Puerto de conexión del servidor.
+        database (str): Nombre del esquema o base de datos.
+
+    Returns:
+        sqlalchemy.engine.Engine: Objeto engine si la conexión es exitosa, o None si ocurre un error.
     """
     try:
-        # Construimos la cadena de conexión de SQLAlchemy
         connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
         engine = create_engine(connection_string)
         print("🔌 Conexión a la base de datos establecida correctamente.")
@@ -19,24 +28,31 @@ def get_db_connection(user='root', password='', host='localhost', port='3306', d
 
 def load_dimension(df_master: pd.DataFrame, dim_name: str, cols_to_extract: list, rename_dict: dict, engine) -> pd.DataFrame:
     """
-    Extrae datos únicos para una dimensión, la carga a BD y devuelve el cruce con las Surrogate Keys.
+    Filtra los valores únicos para una dimensión específica, los carga en la base de datos
+    y recupera las Surrogate Keys autogeneradas.
+
+    Args:
+        df_master (pd.DataFrame): DataFrame maestro que contiene todos los datos limpios.
+        dim_name (str): Nombre de la tabla dimensional en la base de datos.
+        cols_to_extract (list): Lista de nombres de columnas a extraer del df_master.
+        rename_dict (dict): Diccionario para renombrar columnas antes de la inserción (puede estar vacío).
+        engine (sqlalchemy.engine.Engine): Motor de conexión a la base de datos.
+
+    Returns:
+        pd.DataFrame: DataFrame de la dimensión recién cargada, incluyendo sus Surrogate Keys (SK).
     """
     print(f"   -> Cargando dimensión: {dim_name}...")
     
-    # 1. Extraer solo los valores únicos para esta dimensión y quitar nulos
+    # Se obtienen las combinaciones únicas y se descartan valores nulos
     df_dim = df_master[cols_to_extract].drop_duplicates().dropna()
     
-    # 2. Renombrar a como espera la tabla en la BD
     if rename_dict:
         df_dim = df_dim.rename(columns=rename_dict)
     
-    # 3. Cargar a la Base de Datos
-    # if_exists='append' asume que la tabla ya existe (creada por tu script SQL)
-    # index=False evita subir el índice numérico de Pandas
+    # Volcado de la dimensión en MySQL, respetando el esquema preexistente
     df_dim.to_sql(dim_name, con=engine, if_exists='append', index=False)
     
-    # 4. Recuperar la dimensión con sus llaves primarias autogeneradas (SK)
-    # Leemos la tabla completa recién insertada para obtener los SKs generados por MySQL
+    # Lectura inversa para obtener los IDs autoincrementales asignados por MySQL
     df_loaded = pd.read_sql_table(dim_name, con=engine)
     print(f"      ✅ {dim_name} cargada. {df_loaded.shape[0]} registros totales.")
     
@@ -44,7 +60,17 @@ def load_dimension(df_master: pd.DataFrame, dim_name: str, cols_to_extract: list
 
 def load_data(df_clean: pd.DataFrame, engine):
     """
-    Orquesta la carga de las dimensiones y luego la tabla de hechos.
+    Orquesta el flujo completo de carga al Data Warehouse:
+    1. Carga de las 5 tablas dimensionales.
+    2. Cruce de llaves foráneas mediante diccionarios.
+    3. Carga masiva por lotes de la tabla de hechos.
+
+    Args:
+        df_clean (pd.DataFrame): DataFrame principal limpio y transformado.
+        engine (sqlalchemy.engine.Engine): Motor de conexión a la base de datos.
+
+    Returns:
+        None
     """
     if engine is None:
         print("❌ Operación abortada: No hay conexión a DB.")
@@ -52,109 +78,80 @@ def load_data(df_clean: pd.DataFrame, engine):
 
     print("🚀 Iniciando carga al Data Warehouse...")
 
-    # --- 1. CARGA DE DIMENSIONES ---
+    # ==========================================
+    # FASE 1: POBLAR DIMENSIONES
+    # ==========================================
     
-    # Dimensión Demografía
     dim_demografia = load_dimension(
-        df_master=df_clean,
-        dim_name='dim_demografia',
-        cols_to_extract=['id_genero'],
-        rename_dict={}, 
-        engine=engine
+        df_master=df_clean, dim_name='dim_demografia', cols_to_extract=['id_genero'], rename_dict={}, engine=engine
     )
-    # Lógica de negocio (ETL) para la descripción (Ya que solo venía el número 1 o 2)
+    # Enriquecimiento post-carga para hacer la dimensión descriptiva
     with engine.begin() as conn:
         conn.execute(text("UPDATE dim_demografia SET descripcion_genero = 'Masculino' WHERE id_genero = 1;"))
         conn.execute(text("UPDATE dim_demografia SET descripcion_genero = 'Femenino' WHERE id_genero = 2;"))
 
-    # Dimensión Tiempo
     dim_tiempo = load_dimension(
-        df_master=df_clean,
-        dim_name='dim_tiempo',
-        cols_to_extract=['anio', 'semestre'],
-        rename_dict={},
-        engine=engine
+        df_master=df_clean, dim_name='dim_tiempo', cols_to_extract=['anio', 'semestre'], rename_dict={}, engine=engine
     )
     with engine.begin() as conn:
         conn.execute(text("UPDATE dim_tiempo SET periodo_academico = CONCAT(anio, '-', semestre);"))
 
-    # Dimensión Ubicacion
     dim_ubicacion = load_dimension(
-        df_master=df_clean,
-        dim_name='dim_ubicacion',
-        cols_to_extract=['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento'],
-        rename_dict={},
-        engine=engine
+        df_master=df_clean, dim_name='dim_ubicacion', 
+        cols_to_extract=['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento'], rename_dict={}, engine=engine
     )
 
-    # Dimensión Programa
     dim_programa = load_dimension(
-        df_master=df_clean,
-        dim_name='dim_programa',
-        cols_to_extract=['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico'],
-        rename_dict={},
-        engine=engine
+        df_master=df_clean, dim_name='dim_programa', 
+        cols_to_extract=['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico'], rename_dict={}, engine=engine
     )
 
-    # Dimensión Institucion
-    # NOTA: Como la jerarquía está en el archivo crudo, usaremos las columnas 'ies' 
-    # Aquí podríamos extraer: codigo_ies, nombre_ies, principal_seccional, sector, caracter
     dim_institucion = load_dimension(
-        df_master=df_clean,
-        dim_name='dim_institucion',
-        cols_to_extract=['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter'],
-        rename_dict={},
-        engine=engine
+        df_master=df_clean, dim_name='dim_institucion', 
+        cols_to_extract=['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter'], rename_dict={}, engine=engine
     )
 
-    # --- 2. PREPARAR TABLA DE HECHOS (Optimización Ultra-Ligera de Memoria) ---
+    # ==========================================
+    # FASE 2: PREPARAR TABLA DE HECHOS (Optimización)
+    # ==========================================
     print("   -> Preparando fact_matriculas (Mapeo por Diccionarios para bajo consumo de RAM)...")
-    import gc
     fact_df = df_clean.copy()
     
     def map_surrogate_keys(df, dim_df, cols, sk_col):
-        """Mapea llaves sustitutas usando diccionarios, consumiendo ~90% menos memoria que pd.merge()"""
+        """
+        Reemplaza columnas descriptivas por llaves sustitutas utilizando diccionarios.
+        Es drásticamente más eficiente en memoria que pd.merge().
+        """
         if len(cols) == 1:
             mapping = dim_df.set_index(cols[0])[sk_col].to_dict()
             df[sk_col] = df[cols[0]].map(mapping)
         else:
             mapping = dim_df.set_index(cols)[sk_col].to_dict()
-            # Creamos una serie de tuplas (mucho más ligero que un MultiIndex temporal)
             df[sk_col] = pd.Series(list(zip(*[df[c] for c in cols]))).map(mapping)
         
-        # Destruir columnas pesadas inmediatamente
+        # Eliminación explícita para evitar saturación de memoria RAM
         df.drop(columns=cols, inplace=True)
-        gc.collect() # Forzar al recolector de basura a liberar la RAM
+        gc.collect()
 
-    # Aplicar mapeo dimensión por dimensión
     map_surrogate_keys(fact_df, dim_demografia, ['id_genero'], 'sk_demografia')
     map_surrogate_keys(fact_df, dim_tiempo, ['anio', 'semestre'], 'sk_tiempo')
-    
-    cols_ubicacion = ['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento']
-    map_surrogate_keys(fact_df, dim_ubicacion, cols_ubicacion, 'sk_ubicacion')
-    
-    cols_programa = ['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico']
-    map_surrogate_keys(fact_df, dim_programa, cols_programa, 'sk_programa')
-    
-    cols_institucion = ['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter']
-    map_surrogate_keys(fact_df, dim_institucion, cols_institucion, 'sk_institucion')
+    map_surrogate_keys(fact_df, dim_ubicacion, ['codigo_municipio', 'municipio', 'codigo_departamento', 'departamento'], 'sk_ubicacion')
+    map_surrogate_keys(fact_df, dim_programa, ['codigo_snies', 'nombre_programa', 'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico'], 'sk_programa')
+    map_surrogate_keys(fact_df, dim_institucion, ['codigo_ies', 'nombre_ies', 'principal_seccional', 'sector', 'caracter'], 'sk_institucion')
 
-    # Seleccionamos solo las llaves foráneas (SKs) y la métrica
     fact_to_load = fact_df[['sk_institucion', 'sk_programa', 'sk_ubicacion', 'sk_tiempo', 'sk_demografia', 'total_matriculados']]
 
-    # Eliminamos filas que por alguna razón no cruzaron (para mantener integridad referencial)
+    # Filtrar registros que no hayan podido cruzarse correctamente
     filas_antes = len(fact_to_load)
     fact_to_load = fact_to_load.dropna()
     if len(fact_to_load) < filas_antes:
         print(f"      ⚠️ Advertencia: Se perdieron {filas_antes - len(fact_to_load)} registros al cruzar las dimensiones.")
 
-    # --- 3. CARGAR TABLA DE HECHOS ---
+    # ==========================================
+    # FASE 3: CARGAR HECHOS A MYSQL
+    # ==========================================
     print("   -> Cargando fact_matriculas en BD...")
-    # Para la tabla de hechos grande, chunksize=10000 es vital para no colapsar la memoria del servidor MySQL
     fact_to_load.to_sql('fact_matriculas', con=engine, if_exists='append', index=False, chunksize=10000)
     
     print(f"      ✅ Hechos cargados. Total de registros insertados: {len(fact_to_load)}")
     print("🎉 Proceso de Carga Finalizado con Éxito.")
-
-# Para poder usar text() en SQLAlchemy al hacer UPDATES
-from sqlalchemy import text

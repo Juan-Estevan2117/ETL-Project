@@ -13,8 +13,43 @@ sys.path.insert(0, str(src_dir))
 from extract import extract_data
 from transform import clean_and_transform
 from load import get_db_connection, load_data
+import pymysql
+
+def init_database_if_not_exists(user, password, host, port, database, sql_script_path):
+    """
+    Verifica si la base de datos existe. Si no, lee el archivo SQL y lo ejecuta
+    para crear el esquema y las tablas automáticamente.
+    """
+    try:
+        # Conectar al servidor MySQL sin especificar la base de datos
+        connection = pymysql.connect(host=host, user=user, password=password, port=int(port))
+        with connection.cursor() as cursor:
+            cursor.execute(f"SHOW DATABASES LIKE '{database}'")
+            result = cursor.fetchone()
+            
+            if not result:
+                print(f"⚙️ La base de datos '{database}' no existe. Creando e inicializando desde script...")
+                with open(sql_script_path, 'r', encoding='utf-8') as f:
+                    sql_script = f.read()
+                
+                # Separar las consultas por ';' y ejecutarlas una por una
+                statements = sql_script.split(';')
+                for statement in statements:
+                    if statement.strip():
+                        cursor.execute(statement)
+                connection.commit()
+                print("   ✅ Base de datos y tablas creadas con éxito.")
+        connection.close()
+    except Exception as e:
+        print(f"⚠️ Error al verificar/inicializar la base de datos: {e}")
 
 def main():
+    """
+    Función principal que orquesta la ejecución del pipeline ETL.
+    1. Carga variables de entorno.
+    2. Valida la existencia del archivo de datos y la conexión a la base de datos.
+    3. Ejecuta secuencialmente las fases de Extracción, Transformación y Carga.
+    """
     # Cargar variables de entorno desde el archivo .env si existe
     load_dotenv()
 
@@ -36,6 +71,10 @@ def main():
     DB_HOST = os.getenv("DB_HOST")
     DB_PORT = os.getenv("DB_PORT")
     DB_NAME = os.getenv("DB_NAME")
+
+    # Inicialización automática de la base de datos (Ejecuta DDL si no existe)
+    sql_script_path = current_dir / "sql" / "init_dw_matriculas_col.sql"
+    init_database_if_not_exists(DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, str(sql_script_path))
 
     engine = get_db_connection(
         user=DB_USER, 

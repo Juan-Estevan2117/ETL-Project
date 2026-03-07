@@ -2,8 +2,6 @@
 -- CONSULTAS PARA BUSINESS INTELLIGENCE (BI) Y DASHBOARDS
 -- Escenario de Negocio: Brechas de Acceso a la Educación Superior (ODS 4)
 -- ==============================================================================
--- Estas consultas están diseñadas para conectarse directamente desde 
--- herramientas como Power BI, Tableau o Looker Studio hacia el Data Warehouse.
 
 USE dw_matriculas_col;
 

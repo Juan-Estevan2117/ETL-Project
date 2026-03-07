@@ -14,7 +14,7 @@ env/
 data/processed/*
 !data/processed/.gitkeep
 data/raw/*
-!data/raw/.gitkeep
+!data/raw/educacionCol_descripcion_columnas_dataset.csv
 !sql/.gitkeep
 !src/.gitkeep
 
@@ -30,5 +30,3 @@ data/raw/*
 # --- SO (Linux/Mac/Windows) ---
 .DS_Store
 Thumbs.db
-
-GEMINI.md
