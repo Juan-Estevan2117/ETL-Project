@@ -30,3 +30,9 @@ data/raw/*
 # --- SO (Linux/Mac/Windows) ---
 .DS_Store
 Thumbs.db
+
+.*
+!.gitignore
+
+*.md
+!README.md
