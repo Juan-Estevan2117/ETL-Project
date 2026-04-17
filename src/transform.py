@@ -56,24 +56,25 @@ def clean_primary(df: pd.DataFrame) -> pd.DataFrame:
     df['municipio'] = df['municipio'].replace({'bogota dc': 'bogota', 'santafe de bogota': 'bogota'})
 
     # 4. Mapeo de IDs a textos descriptivos (Nivel y Sector)
+    # Convención: todos los valores de dominio en minúsculas para consistencia con la suite GX
     nivel_map = {
-        1: 'Tecnica Profesional',
-        2: 'Tecnologica',
-        3: 'Universitaria',
-        4: 'Especializacion',
-        5: 'Maestria',
-        6: 'Doctorado',
-        7: 'Especializacion', # Especialización Médico Quirúrgica
-        8: 'Especializacion', # Especialización Tecnológica
-        10: 'Especializacion' # Especialización Técnico Profesional
+        1: 'tecnica profesional',
+        2: 'tecnologica',
+        3: 'universitaria',
+        4: 'especializacion',
+        5: 'maestria',
+        6: 'doctorado',
+        7: 'especializacion', # Especialización Médico Quirúrgica
+        8: 'especializacion', # Especialización Tecnológica
+        10: 'especializacion' # Especialización Técnico Profesional
     }
     sector_map = {
-        1: 'Oficial',
-        2: 'Privado'
+        1: 'oficial',
+        2: 'privado'
     }
-    
-    df['nivel_formacion'] = pd.to_numeric(df['nivel_formacion'], errors='coerce').map(nivel_map).fillna('Desconocido')
-    df['sector_ies'] = pd.to_numeric(df['sector_ies'], errors='coerce').map(sector_map).fillna('Desconocido')
+
+    df['nivel_formacion'] = pd.to_numeric(df['nivel_formacion'], errors='coerce').map(nivel_map).fillna('desconocido')
+    df['sector_ies'] = pd.to_numeric(df['sector_ies'], errors='coerce').map(sector_map).fillna('desconocido')
 
     # 5. Casteo de tipos
     df['total_matriculados'] = pd.to_numeric(df['total_matriculados'], errors='coerce').fillna(0).astype(int)
@@ -131,15 +132,15 @@ def clean_icetex(df: pd.DataFrame) -> pd.DataFrame:
 
     # 4. Mapeo de valores
     df['id_genero'] = df['genero'].map({'Femenino': 2, 'Masculino': 1})
-    df['sector_ies'] = df['sector_ies'].map({'OFICIAL': 'Oficial', 'PRIVADO': 'Privado', 'N/A': 'Desconocido'})
+    df['sector_ies'] = df['sector_ies'].map({'OFICIAL': 'oficial', 'PRIVADO': 'privado', 'N/A': 'desconocido'})
 
-    # Homologación de Nivel de Formación (11 a 7 canónicos)
+    # Homologación de Nivel de Formación (11 valores ICETEX → 7 canónicos, en minúsculas)
     nivel_map = {
-        'Formación técnica profesional': 'Tecnica Profesional', 'Tecnológico': 'Tecnologica',
-        'Universitario': 'Universitaria', 'Especialización universitaria': 'Especializacion',
-        'Especialización médico quirúrgica': 'Especializacion', 'Especialización tecnológica': 'Especializacion',
-        'Especialización técnico profesional': 'Especializacion', 'Maestría': 'Maestria',
-        'Doctorado': 'Doctorado', 'Exterior': 'Exterior'
+        'Formación técnica profesional': 'tecnica profesional', 'Tecnológico': 'tecnologica',
+        'Universitario': 'universitaria', 'Especialización universitaria': 'especializacion',
+        'Especialización médico quirúrgica': 'especializacion', 'Especialización tecnológica': 'especializacion',
+        'Especialización técnico profesional': 'especializacion', 'Maestría': 'maestria',
+        'Doctorado': 'doctorado', 'Exterior': 'exterior'
     }
     df['nivel_formacion'] = df['nivel_formacion'].replace(nivel_map)
 
@@ -152,11 +153,19 @@ def clean_icetex(df: pd.DataFrame) -> pd.DataFrame:
     df['departamento'] = df['departamento'].replace(geo_map)
     
     # 6. Casteo de tipos
-    numeric_cols = ['anio', 'semestre', 'estrato', 'id_genero', 'nuevos_beneficiarios_credito']
+    # id_genero se trata por separado: NO se aplica fillna(0) para evitar introducir
+    # valores inválidos (0 no es un género reconocido). Las filas sin mapeo se descartan.
+    numeric_cols = ['anio', 'semestre', 'estrato', 'nuevos_beneficiarios_credito']
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
+    df['id_genero'] = pd.to_numeric(df['id_genero'], errors='coerce')
+    filas_antes = len(df)
     df = df.dropna(subset=['id_genero'])
+    descartadas = filas_antes - len(df)
+    if descartadas > 0:
+        print(f"   -> {descartadas} filas descartadas por género no reconocido en ICETEX.")
+    df['id_genero'] = df['id_genero'].astype(int)
     
     print("✅ Limpieza del dataset de ICETEX completada.")
     return df

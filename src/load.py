@@ -48,10 +48,11 @@ def load_dimensions(df_integrated: pd.DataFrame, engine: Engine) -> dict:
         conn.execute(text("UPDATE dim_demografia SET descripcion_genero = 'Femenino' WHERE id_genero = 2 AND (descripcion_genero IS NULL OR descripcion_genero = '');"))
 
     # Dim Nivel Formacion - Enriquecida post-carga
+    # Los valores de nivel_formacion están en minúsculas (convención del pipeline)
     dims['dim_nivel_formacion'] = _load_dimension_and_get_sk(df_integrated, 'dim_nivel_formacion', ['nivel_formacion'], engine)
     with engine.begin() as conn:
-        conn.execute(text("UPDATE dim_nivel_formacion SET tipo_formacion = 'Pregrado' WHERE nivel_formacion IN ('Tecnica Profesional', 'Tecnologica', 'Universitaria');"))
-        conn.execute(text("UPDATE dim_nivel_formacion SET tipo_formacion = 'Posgrado' WHERE nivel_formacion IN ('Especializacion', 'Maestria', 'Doctorado');"))
+        conn.execute(text("UPDATE dim_nivel_formacion SET tipo_formacion = 'Pregrado' WHERE nivel_formacion IN ('tecnica profesional', 'tecnologica', 'universitaria');"))
+        conn.execute(text("UPDATE dim_nivel_formacion SET tipo_formacion = 'Posgrado' WHERE nivel_formacion IN ('especializacion', 'maestria', 'doctorado');"))
 
     # Dim Sector IES
     dims['dim_sector_ies'] = _load_dimension_and_get_sk(df_integrated, 'dim_sector_ies', ['sector_ies'], engine)

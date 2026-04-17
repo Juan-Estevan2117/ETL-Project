@@ -152,6 +152,32 @@ INSERT INTO `dim_estrato` (`estrato`, `descripcion_estrato`) VALUES
 (6, 'Estrato 6')
 ON DUPLICATE KEY UPDATE `descripcion_estrato` = VALUES(`descripcion_estrato`);
 
+-- =====================================================================
+-- TABLA DE STAGING PARA VISTA AUXILIAR
+-- =====================================================================
+DROP TABLE IF EXISTS `legacy_matriculas_detalle`;
+CREATE TABLE `legacy_matriculas_detalle` (
+  `codigo_ies` INT,
+  `nombre_ies` VARCHAR(255),
+  `principal_seccional` VARCHAR(100),
+  `sector_ies` VARCHAR(100),
+  `caracter` VARCHAR(100),
+  `codigo_snies` INT,
+  `nombre_programa` VARCHAR(255),
+  `nivel_formacion` VARCHAR(150),
+  `metodologia` VARCHAR(100),
+  `area_conocimiento` VARCHAR(255),
+  `nucleo_basico` VARCHAR(255),
+  `codigo_municipio` INT,
+  `municipio` VARCHAR(150),
+  `codigo_departamento` INT,
+  `departamento` VARCHAR(150),
+  `id_genero` INT,
+  `anio` INT,
+  `semestre` INT,
+  `total_matriculados` INT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- --- Restauración de la configuración de la sesión ---
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
