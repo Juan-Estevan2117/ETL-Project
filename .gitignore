@@ -4,19 +4,26 @@ __pycache__/
 *$py.class
 *.so
 .Python
-# Entornos virtuales
 venv/
 .venv/
 env/
-.env
 
-# --- Datos (ETL) ---
-data/processed/*
-!data/processed/.gitkeep
-data/raw/*
-!data/raw/educacionCol_descripcion_columnas_dataset.csv
-!sql/.gitkeep
-!src/.gitkeep
+# --- Datos (airflow/data/) ---
+airflow/data/raw/*
+!airflow/data/raw/.gitkeep
+!airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv
+!airflow/data/raw/descripcion_dataset_api.txt
+airflow/data/processed/*
+!airflow/data/processed/.gitkeep
+
+# --- Carpeta data/ legacy (ya migrada a airflow/data/) ---
+data/
+
+# --- Airflow runtime ---
+airflow/logs/*
+!airflow/logs/.gitkeep
+airflow/.env
+airflow/config/airflow.cfg
 
 # --- Jupyter / Notebooks ---
 .ipynb_checkpoints
@@ -26,13 +33,14 @@ data/raw/*
 *.log
 *.sql.gz
 
-
-# --- SO (Linux/Mac/Windows) ---
+# --- SO ---
 .DS_Store
 Thumbs.db
 
+# --- Dotfiles internos (Claude, Gemini, etc.) ---
 .*
 !.gitignore
 
+# --- Markdown (solo README visible) ---
 *.md
 !README.md
