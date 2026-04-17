@@ -95,16 +95,33 @@ def main():
         df_primary_clean.to_csv(PROCESSED_DIR / "educacionCol_clean.csv", index=False)
         print("      -> CSV primario limpio exportado: 'educacionCol_clean.csv'.")
 
-        # Cargar a la tabla legacy para la vista de Looker
+        # Cargar a la tabla legacy para la vista auxiliar (solo columnas relevantes)
+        legacy_cols = [
+            'codigo_ies', 'nombre_ies', 'principal_seccional', 'sector_ies',
+            'caracter', 'codigo_snies', 'nombre_programa', 'nivel_formacion',
+            'metodologia', 'area_conocimiento', 'nucleo_basico',
+            'codigo_municipio', 'municipio', 'codigo_departamento',
+            'departamento', 'id_genero', 'anio', 'semestre', 'total_matriculados'
+        ]
         try:
             from src.load import get_db_connection
             print("   -> Cargando datos de granularidad fina en 'legacy_matriculas_detalle'...")
             engine = get_db_connection()
-            df_primary_clean.to_sql('legacy_matriculas_detalle', con=engine, if_exists='replace', index=False, chunksize=10000)
+            df_primary_clean[legacy_cols].to_sql(
+                'legacy_matriculas_detalle', con=engine,
+                if_exists='replace', index=False, chunksize=10000
+            )
+            # Crear/actualizar la vista auxiliar sobre la tabla legacy
+            view_sql = (project_root / "sql" / "vw_matriculas_detalle.sql").read_text(encoding='utf-8')
+            with engine.begin() as conn:
+                for stmt in view_sql.split(';'):
+                    stmt = stmt.strip()
+                    if stmt and not all(l.startswith('--') for l in stmt.splitlines() if l.strip()):
+                        conn.execute(text(stmt))
+            print("      Carga a tabla legacy y vista auxiliar completada.")
             engine.dispose()
-            print("      ✅ Carga a tabla legacy completada.")
         except Exception as e:
-            print(f"⚠️ Advertencia: No se pudo cargar la tabla legacy. Error: {e}")
+            print(f"   ADVERTENCIA: No se pudo cargar la tabla legacy/vista. Error: {e}")
 
         df_primary_agg = aggregate_primary(df_primary_clean)
 

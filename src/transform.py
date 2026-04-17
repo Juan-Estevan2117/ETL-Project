@@ -50,7 +50,8 @@ def clean_primary(df: pd.DataFrame) -> pd.DataFrame:
     geo_map = {
         'bogota dc': 'bogota', 'narinio': 'narino', 'guajira': 'la guajira',
         'san andres y provi': 'san andres y providencia',
-        'archipielago de san andres providencia y santa catalina': 'san andres y providencia'
+        'archipielago de sa': 'san andres y providencia',
+        'archipielago de san andres providencia y santa catalina': 'san andres y providencia',
     }
     df['departamento'] = df['departamento'].replace(geo_map)
     df['municipio'] = df['municipio'].replace({'bogota dc': 'bogota', 'santafe de bogota': 'bogota'})
@@ -145,10 +146,11 @@ def clean_icetex(df: pd.DataFrame) -> pd.DataFrame:
     df['nivel_formacion'] = df['nivel_formacion'].replace(nivel_map)
 
     # 5. Limpieza de texto y homologación geográfica
+    # Las claves del geo_map deben ser POST-clean_text (sin comas, puntos ni tildes)
     df['departamento'] = df['departamento'].apply(clean_text)
     geo_map = {
-        'bogota, d.c.': 'bogota',
-        'archipielago de san andres, providencia y santa catalina': 'san andres y providencia'
+        'bogota dc': 'bogota',
+        'archipielago de san andres providencia y santa catalina': 'san andres y providencia',
     }
     df['departamento'] = df['departamento'].replace(geo_map)
     
