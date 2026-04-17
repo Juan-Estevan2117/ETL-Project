@@ -13,6 +13,7 @@ from src.config import PRIMARY_CSV, PROCESSED_DIR, MYSQL_USER, MYSQL_PASSWORD, M
 from src.extract import extract_data, extract_icetex_api
 from src.transform import clean_primary, aggregate_primary, clean_icetex, aggregate_icetex
 from src.integrate import integrate_sources
+from src.validate import run_validation
 from src.load import load_data
 
 
@@ -138,12 +139,18 @@ def main():
         # --- FASE 2.5: INTEGRACIÓN ---
         df_integrated = integrate_sources(df_primary_agg, df_icetex_agg)
 
+        # --- FASE 2.75: VALIDACIÓN (Great Expectations) ---
+        critical_passed, gx_report = run_validation(df_integrated)
+        if not critical_passed:
+            print("PIPELINE ABORTADO: validaciones criticas de Great Expectations fallaron.")
+            print(f"   Fallos: {gx_report['critical_failures']}")
+            sys.exit(1)
+
         # --- FASE 3: CARGA (L) ---
-        # El módulo de carga (load.py) se encarga de la conexión y orquestación
         if not df_integrated.empty:
             load_data(df_integrated)
         else:
-            print("⚠️ ADVERTENCIA: El dataset integrado está vacío. No se cargará nada a la base de datos.")
+            print("ADVERTENCIA: El dataset integrado esta vacio. No se cargara nada a la base de datos.")
 
     except Exception as e:
         print(f"❌ OCURRIÓ UN ERROR FATAL EN EL PIPELINE:")

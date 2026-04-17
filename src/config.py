@@ -8,15 +8,19 @@ from dotenv import load_dotenv
 
 # Se define la ruta del proyecto y se carga el .env
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
-ENV_PATH = PROJECT_ROOT / "airflow" / ".env"
-load_dotenv(dotenv_path=ENV_PATH)
 
-# --- Rutas del sistema de archivos ---
-AIRFLOW_DIR: Path = PROJECT_ROOT / "airflow"
-DATA_DIR: Path = AIRFLOW_DIR / "data"
+# Deteccion de entorno Docker (Airflow): las rutas cambian
+_DOCKER = Path("/opt/airflow/src").exists()
+
+if _DOCKER:
+    DATA_DIR: Path = Path("/opt/airflow/data")
+else:
+    ENV_PATH = PROJECT_ROOT / "airflow" / ".env"
+    load_dotenv(dotenv_path=ENV_PATH)
+    DATA_DIR: Path = PROJECT_ROOT / "airflow" / "data"
 RAW_DIR: Path = DATA_DIR / "raw"
 PROCESSED_DIR: Path = DATA_DIR / "processed"
-STAGING_DIR: Path = DATA_DIR / "staging" # Directorio para archivos intermedios (pickles)
+STAGING_DIR: Path = DATA_DIR / "staging"
 
 # Asegurarse de que los directorios existan
 RAW_DIR.mkdir(parents=True, exist_ok=True)

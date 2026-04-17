@@ -57,17 +57,20 @@ def clean_primary(df: pd.DataFrame) -> pd.DataFrame:
     df['municipio'] = df['municipio'].replace({'bogota dc': 'bogota', 'santafe de bogota': 'bogota'})
 
     # 4. Mapeo de IDs a textos descriptivos (Nivel y Sector)
-    # Convención: todos los valores de dominio en minúsculas para consistencia con la suite GX
+    # IDs oficiales del SNIES (Ministerio de Educacion). Verificado contra la
+    # distribucion real de matriculas: ID=6 (universitaria) concentra ~16M,
+    # ID=5 (tecnologica) ~6M, doctorado pocos miles.
+    # Todos los valores de dominio se almacenan en minusculas.
     nivel_map = {
-        1: 'tecnica profesional',
-        2: 'tecnologica',
-        3: 'universitaria',
-        4: 'especializacion',
-        5: 'maestria',
-        6: 'doctorado',
-        7: 'especializacion', # Especialización Médico Quirúrgica
-        8: 'especializacion', # Especialización Tecnológica
-        10: 'especializacion' # Especialización Técnico Profesional
+        1: 'especializacion',        # Especializacion Universitaria
+        2: 'tecnica profesional',
+        3: 'doctorado',
+        4: 'maestria',
+        5: 'tecnologica',
+        6: 'universitaria',
+        7: 'especializacion',        # Especializacion Medico Quirurgica
+        8: 'especializacion',        # Especializacion Tecnologica
+        10: 'especializacion',       # Especializacion Tecnico Profesional
     }
     sector_map = {
         1: 'oficial',

@@ -216,60 +216,80 @@ El mapeo de llaves foráneas se realiza con `set_index().to_dict()` + `Series.ma
 
 La suite `fact_educacion_superior_suite` se ejecuta sobre el DataFrame integrado **antes** de la carga a MySQL. Un fallo en cualquier expectativa crítica aborta el pipeline con `sys.exit(1)`.
 
-### Expectativas críticas (abortan el pipeline)
+### Expectativas críticas (14 — abortan el pipeline)
 
-| # | Expectativa | Justificación |
+| # | Tipo | Columna | Justificación |
+|---|---|---|---|
+| 1–7 | `ExpectColumnValuesToNotBeNull` | `anio`, `semestre`, `departamento`, `nivel_formacion`, `sector_ies`, `id_genero`, `estrato` | Claves de negocio obligatorias |
+| 8–9 | `ExpectColumnValuesToBeBetween(min=0)` | `total_matriculados`, `nuevos_beneficiarios_credito` | Métricas aditivas, no negativas |
+| 10 | `ExpectColumnValuesToBeInSet([0..6])` | `estrato` | `0=Desconocido` (SNIES), `1..6` (ICETEX) |
+| 11 | `ExpectColumnValuesToBeInSet(7 valores)` | `nivel_formacion` | Dominio canónico en minúsculas |
+| 12 | `ExpectColumnValuesToBeInSet(['oficial','privado','desconocido'])` | `sector_ies` | `N/A` ICETEX → `desconocido` |
+| 13 | `ExpectColumnValuesToBeInSet([1,2])` | `id_genero` | `Intersexual` descartado en clean_icetex |
+| 14 | `ExpectColumnValuesToBeBetween(2015, 2025)` | `anio` | Rango real: SNIES 2015–2021, ICETEX 2015–2025 |
+
+### Expectativas no críticas (2 — solo warning)
+
+| # | Tipo | Justificación |
 |---|---|---|
-| 1 | `expect_compound_columns_to_be_unique` (6 FKs) | Integridad del grano |
-| 2 | `expect_column_values_to_not_be_null` en cada FK | Claves obligatorias |
-| 3 | `expect_column_values_to_be_between(total_matriculados, min=0)` | Métrica aditiva, no negativa |
-| 4 | `expect_column_values_to_be_between(nuevos_beneficiarios_credito, min=0)` | Idem |
-| 5 | `expect_column_values_to_be_in_set(estrato, [0,1,2,3,4,5,6])` | `0=Desconocido` (SNIES), `1..6` (ICETEX) |
-| 6 | `expect_column_values_to_be_in_set(nivel_formacion, ['tecnica profesional','tecnologica','universitaria','especializacion','maestria','doctorado','exterior'])` | 7 valores canónicos en minúsculas |
-| 7 | `expect_column_values_to_be_in_set(sector_ies, ['oficial','privado','desconocido'])` | `N/A` ICETEX → `desconocido` |
-| 8 | `expect_column_values_to_be_in_set(id_genero, [1,2])` | `Intersexual` descartado en clean_icetex |
-| 9 | `expect_column_values_to_be_between(anio, 2015, 2025)` | Rango real: SNIES 2015–2021, ICETEX 2015–2025 |
+| 15 | `ExpectTableRowCountToBeBetween(5000, 150000)` | Sanity check de volumen |
+| 16 | `ExpectColumnValuesToBeInSet(semestre, [1, 2])` | Semestre académico válido |
 
-### Expectativas no críticas (solo log)
+### Implementación técnica
 
-| # | Expectativa | Justificación |
-|---|---|---|
-| 10 | `expect_table_row_count_to_be_between(5000, 150000)` | Sanity check de volumen |
-| 11 | `expect_column_values_to_not_be_null(descripcion_estrato)` en dim | Integridad descriptiva |
-| 12 | `expect_table_columns_to_match_ordered_list` | Detección de schema drift |
-
-Los Data Docs HTML se generan en `gx/uncommitted/data_docs/`.
+- **GX v1.16.1** con Fluent API y contexto de archivo (`mode="file"`, raíz en `gx/`).
+- Dos suites (`critical_suite`, `non_critical_suite`) ejecutadas por un único checkpoint (`etl_checkpoint`).
+- `UpdateDataDocsAction` genera reportes HTML navegables en `gx/uncommitted/data_docs/local_site/`.
+- Para visualizar los resultados: `xdg-open gx/uncommitted/data_docs/local_site/index.html`.
 
 ---
 
 ## 8. Consultas BI y Dashboard
 
-Las queries analíticas están en `sql/bi_queries.sql`, organizadas en dos secciones:
+Todas las queries analíticas están en `sql/bi_queries.sql`, organizadas en tres secciones.
 
-### Sección 1 — Nuevas consultas de integración SNIES + ICETEX
+### 8.1. Consultas de Integración (SNIES + ICETEX)
 
-| Query | Descripción | Visualización sugerida |
+Estas consultas son el valor diferencial de la segunda entrega: solo son posibles gracias a la integración de ambas fuentes en una única fact table. Cruzan las métricas `total_matriculados` (SNIES) y `nuevos_beneficiarios_credito` (ICETEX) para responder preguntas de equidad y cobertura.
+
+| Query | Descripción | Métricas cruzadas | Visualización |
+|---|---|---|---|
+| 1.1 | **Tasa de cobertura de crédito por departamento** — identifica "desiertos de financiación" donde hay alta matrícula pero baja penetración de créditos ICETEX | `SUM(matriculados)` vs `SUM(beneficiarios)` → `tasa_cobertura_pct` | Mapa coroplético |
+| 1.2 | **Brecha de acceso a crédito por estrato socioeconómico** — mide la equidad: ¿a qué estratos llega más la financiación? | `SUM(matriculados)` vs `SUM(beneficiarios)` por `dim_estrato` | Barras con doble eje |
+| 1.3 | **Tendencia de créditos por sector de IES (oficial vs privado)** — analiza si los créditos se dirigen más a IES públicas o privadas a lo largo del tiempo | `SUM(matriculados)` y `SUM(beneficiarios)` por `dim_sector_ies` × `dim_tiempo` | Líneas / áreas apiladas |
+
+### 8.2. Consultas sobre el Modelo Dimensional Agregado
+
+Aprovechan el grano del star schema (`fact_educacion_superior` + dimensiones conformadas).
+
+| Query | Descripción | Visualización |
 |---|---|---|
-| 1.1 | Tasa de cobertura de crédito por departamento | Mapa coroplético |
-| 1.2 | Brecha de acceso a crédito por estrato socioeconómico | Barras doble eje |
-| 1.3 | Tendencia anual: créditos a sector oficial vs privado | Líneas o áreas apiladas |
+| 2.1 | Evolución temporal de matrículas por nivel de formación | Líneas múltiples |
+| 2.2 | Top 10 departamentos por volumen de matrícula (con % nacional) | Barras horizontales |
+| 2.3 | Brecha de género por nivel de formación (Pregrado vs Posgrado) | Barras agrupadas |
 
-### Sección 2 — Consultas adaptadas del SNIES (legado)
+### 8.3. Consultas sobre la Vista Auxiliar (Granularidad Fina)
 
-| Query | Descripción | Fuente |
+Usan `vw_matriculas_detalle` para análisis que requieren el detalle original del SNIES (IES, programa, municipio, núcleo básico).
+
+| Query | Descripción | Visualización |
 |---|---|---|
-| 2.1 | Paridad de género por área de conocimiento (STEM) | `vw_matriculas_detalle` |
-| 2.2 | Distribución de niveles: grandes ejes vs otras regiones | `vw_matriculas_detalle` |
-| 2.3 | Top 10 IES públicas por matrícula universitaria | `vw_matriculas_detalle` |
-| 2.4 | Evolución temporal de matrículas por nivel (2015–2021) | `fact_educacion_superior` |
-| 2.5 | Top 10 departamentos por volumen de matrícula | `fact_educacion_superior` |
-| 2.6 | Brecha de género por nivel de formación (Pregrado vs Posgrado) | `fact_educacion_superior` |
+| 3.1 | Paridad de género por núcleo básico de conocimiento (Top 20) | Barras divergentes |
+| 3.2 | Distribución de niveles: grandes ejes vs otras regiones | Barras apiladas |
+| 3.3 | Top 10 instituciones públicas por matrícula universitaria | Tabla / barras |
 
-### KPIs propuestos para el dashboard
+### 8.4. Dashboard (Looker Studio)
 
-- **Cobertura crediticia nacional (%)** = Σ nuevos_beneficiarios / Σ total_matriculados
-- **Brecha estratos 1–2 vs 5–6**: diferencia en tasa de cobertura entre estratos bajos y altos
-- **Top 5 departamentos con alta matrícula y baja cobertura** ("desiertos crediticios")
+El dashboard interactivo fue construido en **Google Looker Studio**, conectado directamente al Data Warehouse MySQL (`dw_matriculas_col`). Se alimenta de las consultas de la sección 8.1 (integración) y 8.2 (modelo dimensional).
+
+**KPIs principales:**
+
+- **Cobertura crediticia nacional (%)** = Σ `nuevos_beneficiarios_credito` / Σ `total_matriculados`
+- **Brecha por estrato**: diferencia en tasa de cobertura entre estratos 1–2 vs 5–6
+- **Desiertos crediticios**: departamentos con alta matrícula y baja cobertura de crédito
+
+<!-- Insertar captura del dashboard aquí -->
+![Dashboard Looker Studio](docs/dashboard_looker.png)
 
 ---
 
@@ -364,7 +384,7 @@ SELECT SUM(nuevos_beneficiarios_credito) FROM fact_educacion_superior;
 
 ## 10. Diseño del DAG de Airflow
 
-El DAG `etl_ods4` en `airflow/dags/etl_ods4.py` replica el flujo del pipeline local con `PythonOperator` por cada función. Las tareas intercambian datos a través de pickles en `/opt/airflow/data/`.
+El DAG `etl_ods4` (`airflow/dags/etl_ods4.py`) replica el pipeline local con `PythonOperator` por cada función. Las tareas intercambian datos mediante pickles en `/opt/airflow/data/staging/`.
 
 ```
 extract_primary ──► clean_primary ──► aggregate_primary ──┐
@@ -372,10 +392,32 @@ extract_primary ──► clean_primary ──► aggregate_primary ──┐
 extract_icetex  ──► clean_icetex  ──► aggregate_icetex  ──┘
 ```
 
-Para ejecutar el DAG manualmente (luego de `docker compose up`):
+### Tareas del DAG (9)
+
+| Task ID | Módulo | Descripción |
+|---|---|---|
+| `extract_primary` | `extract.py` | Lee CSV SNIES → pickle |
+| `extract_icetex` | `extract.py` | Consume API Socrata paginada → pickle |
+| `clean_primary` | `transform.py` | Limpieza y homologación SNIES |
+| `clean_icetex` | `transform.py` | Limpieza y homologación ICETEX |
+| `aggregate_primary` | `transform.py` | Agregación al grano del DW |
+| `aggregate_icetex` | `transform.py` | Agregación al grano del DW |
+| `integrate` | `integrate.py` | FULL OUTER JOIN de ambas fuentes |
+| `validate_gx` | `validate.py` | Suite GX — aborta con `RuntimeError` si falla |
+| `load_dw` | `load.py` | Carga dimensiones + fact en MySQL |
+
+### Adaptaciones para Docker
+
+- `config.py` detecta automáticamente el entorno Docker (`/opt/airflow/src` existe) y ajusta rutas.
+- `docker-compose.yaml` sobreescribe `MYSQL_HOST=mysql-dw` y `MYSQL_PORT=3306` para la red interna.
+- Volúmenes montados: `src/:ro`, `sql/:ro`, `gx/` (lectura/escritura para Data Docs), `data/`.
+
+### Ejecución del DAG
 
 ```bash
-docker compose exec airflow-scheduler airflow dags test etl_ods4 2026-04-16
+cd airflow
+docker compose up -d
+docker compose exec airflow-scheduler airflow dags test etl_ods4 2026-04-17
 ```
 
-Los logs del DAG se encuentran en `airflow/logs/` y los Data Docs de GX en `gx/uncommitted/data_docs/`.
+Los logs se encuentran en `airflow/logs/` y los Data Docs de GX en `gx/uncommitted/data_docs/local_site/`.

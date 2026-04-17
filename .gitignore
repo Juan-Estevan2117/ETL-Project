@@ -15,6 +15,11 @@
 airflow/config/airflow.cfg
 airflow/logs/
 
+# --- Great Expectations (auto-generado por validate.py) ---
+# Se crea solo al primer run del pipeline (en local y en el contenedor).
+/gx/
+/airflow/data/gx/
+
 # --- Python ---
 __pycache__/
 *.py[cod]

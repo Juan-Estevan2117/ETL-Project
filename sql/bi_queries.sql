@@ -36,19 +36,25 @@ ORDER BY tasa_cobertura_credito_pct DESC;
 
 
 -- ------------------------------------------------------------------------------
--- 1.2. Brecha de Acceso a Credito por Estrato Socioeconomico
--- Mide la equidad: a que estratos llega mas la financiacion?
--- Se excluye estrato 0 (Desconocido = filas SNIES sin dato de estrato).
--- Visualizacion: Barras con doble eje (volumen y tasa).
+-- 1.2. Distribucion de Beneficiarios de Credito por Estrato Socioeconomico
+-- Mide la equidad: a que estratos llega mas la financiacion de ICETEX?
+-- Nota: SNIES no reporta estrato (imputado como 0), por lo que no es posible
+-- calcular "tasa de cobertura" por estrato. En su lugar se analiza:
+--   (a) volumen absoluto de beneficiarios por estrato
+--   (b) porcentaje del total nacional que recibe cada estrato
+-- Visualizacion: Barras con doble eje (volumen absoluto y % del total).
 -- ------------------------------------------------------------------------------
 SELECT
     de.descripcion_estrato,
-    SUM(fe.total_matriculados) AS total_matriculados,
     SUM(fe.nuevos_beneficiarios_credito) AS total_beneficiarios_credito,
     ROUND(
-        (SUM(fe.nuevos_beneficiarios_credito) / NULLIF(SUM(fe.total_matriculados), 0)) * 100,
+        SUM(fe.nuevos_beneficiarios_credito) * 100.0 /
+        (SELECT SUM(nuevos_beneficiarios_credito)
+           FROM fact_educacion_superior fe2
+           JOIN dim_estrato de2 ON fe2.sk_estrato = de2.sk_estrato
+          WHERE de2.estrato > 0),
         2
-    ) AS tasa_cobertura_por_estrato_pct
+    ) AS porcentaje_del_total_pct
 FROM fact_educacion_superior fe
 JOIN dim_estrato de ON fe.sk_estrato = de.sk_estrato
 WHERE de.estrato > 0
