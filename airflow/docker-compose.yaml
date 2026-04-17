@@ -71,6 +71,14 @@ x-airflow-common:
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
     # yamllint enable rule:line-length
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Overrides para que el pipeline conecte al MySQL dentro de la red Docker
+    MYSQL_HOST: mysql-dw
+    MYSQL_PORT: '3306'
+    # Redirige la carpeta `gx/` de Great Expectations al volumen de datos, que
+    # ya esta montado con permisos del usuario airflow. Evita un bind-mount
+    # adicional y permite acceder a los Data Docs desde el host en
+    # airflow/data/gx/uncommitted/data_docs/local_site/index.html
+    GX_PROJECT_ROOT: /opt/airflow/data
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
     _PIP_ADDITIONAL_REQUIREMENTS: '-r /requirements.txt'
@@ -85,6 +93,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/requirements:/opt/airflow/requirements
     - ${AIRFLOW_PROJ_DIR:-.}/requirements.txt:/requirements.txt:ro
     - ${AIRFLOW_PROJ_DIR:-.}/../src:/opt/airflow/src:ro
+    - ${AIRFLOW_PROJ_DIR:-.}/../sql:/opt/airflow/sql:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
