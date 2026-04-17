@@ -124,7 +124,7 @@ def load_fact_table(df_integrated: pd.DataFrame, dims: dict, engine: Engine):
 
     # Carga masiva en la base de datos
     print(f"   -> Cargando {len(fact_df)} registros en 'fact_educacion_superior'...")
-    fact_df.to_sql('fact_educacion_superior', con=engine, if_exists='append', index=False, chunksize=10000)
+    fact_df.to_sql('fact_educacion_superior', con=engine, if_exists='append', index=False, chunksize=10000, method=_insert_ignore)
     
     print("      ✅ Carga de la tabla de hechos completada.")
 
