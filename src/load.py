@@ -1,6 +1,7 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 import gc
 
 from config import MYSQL_URL
@@ -9,24 +10,40 @@ def get_db_connection() -> Engine:
     """Establece la conexión con la base de datos usando la URL del config."""
     try:
         engine = create_engine(MYSQL_URL)
-        # Probar la conexión
         with engine.connect() as connection:
-            print("🔌 Conexión a la base de datos establecida correctamente.")
+            print("Conexión a la base de datos establecida correctamente.")
         return engine
     except Exception as e:
-        print(f"❌ Error al conectar a la base de datos: {e}")
+        print(f"Error al conectar a la base de datos: {e}")
         raise
 
+
+def _insert_ignore(table, conn, keys, data_iter):
+    """
+    Método personalizado para to_sql que emite INSERT IGNORE en MySQL.
+    Permite que el pipeline sea re-ejecutable sin necesidad de borrar la BD:
+    los registros ya existentes se omiten silenciosamente en lugar de lanzar
+    IntegrityError por la UNIQUE KEY de cada dimensión.
+    """
+    data = [dict(zip(keys, row)) for row in data_iter]
+    stmt = mysql_insert(table.table).prefix_with('IGNORE')
+    conn.execute(stmt, data)
+
+
 def _load_dimension_and_get_sk(df_source: pd.DataFrame, dim_name: str, business_keys: list, engine: Engine) -> pd.DataFrame:
-    """Carga una dimensión y retorna el DataFrame con su surrogate key."""
+    """
+    Carga una dimensión usando INSERT IGNORE y retorna el DataFrame completo con SKs.
+    El INSERT IGNORE garantiza idempotencia: en re-runs, los registros duplicados
+    se descartan sin error, preservando las surrogate keys ya asignadas por MySQL.
+    """
     df_dim = df_source[business_keys].drop_duplicates().dropna(subset=business_keys)
-    
-    # Cargar los datos nuevos
-    df_dim.to_sql(dim_name, con=engine, if_exists='append', index=False)
-    
-    # Releer la tabla completa para obtener las SKs generadas
+
+    # INSERT IGNORE: inserta solo los registros que no violen la UNIQUE KEY
+    df_dim.to_sql(dim_name, con=engine, if_exists='append', index=False, method=_insert_ignore)
+
+    # Releer la tabla completa para obtener las SKs generadas por AUTO_INCREMENT
     df_loaded = pd.read_sql_table(dim_name, con=engine)
-    print(f"      ✅ Dimensión '{dim_name}' cargada y releída. {df_loaded.shape[0]} registros totales.")
+    print(f"      Dimension '{dim_name}' cargada. {df_loaded.shape[0]} registros totales.")
     return df_loaded
 
 def load_dimensions(df_integrated: pd.DataFrame, engine: Engine) -> dict:
