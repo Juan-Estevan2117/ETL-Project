@@ -1,7 +1,6 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 import gc
 
 from config import MYSQL_URL
@@ -21,12 +20,19 @@ def get_db_connection() -> Engine:
 def _insert_ignore(table, conn, keys, data_iter):
     """
     Método personalizado para to_sql que emite INSERT IGNORE en MySQL.
-    Permite que el pipeline sea re-ejecutable sin necesidad de borrar la BD:
-    los registros ya existentes se omiten silenciosamente en lugar de lanzar
-    IntegrityError por la UNIQUE KEY de cada dimensión.
+    Permite que el pipeline sea re-ejecutable: los registros que ya existen
+    (por UNIQUE KEY) se omiten silenciosamente sin IntegrityError.
+
+    Se construye con text() y columnas explícitas para garantizar compatibilidad
+    con todas las versiones de SQLAlchemy >= 1.4 y evitar que el ORM-style
+    INSERT sin values() ejecute 0 filas silenciosamente.
     """
     data = [dict(zip(keys, row)) for row in data_iter]
-    stmt = mysql_insert(table.table).prefix_with('IGNORE')
+    if not data:
+        return
+    cols = ', '.join(f'`{k}`' for k in keys)
+    placeholders = ', '.join(f':{k}' for k in keys)
+    stmt = text(f"INSERT IGNORE INTO `{table.name}` ({cols}) VALUES ({placeholders})")
     conn.execute(stmt, data)
 
 
