@@ -13,8 +13,9 @@
 6. [Explicación del Pipeline ETL](#6-explicación-del-pipeline-etl)
 7. [Estrategia de Validación (Great Expectations)](#7-estrategia-de-validación-great-expectations)
 8. [Consultas BI y Dashboard](#8-consultas-bi-y-dashboard)
-9. [Instrucciones de Ejecución](#9-instrucciones-de-ejecución-local)
-10. [Diseño del DAG de Airflow](#10-diseño-del-dag-de-airflow)
+9. [Estructura del Proyecto](#9-estructura-del-proyecto)
+10. [Instrucciones de Ejecución](#10-instrucciones-de-ejecución-local)
+11. [Diseño del DAG de Airflow](#11-diseño-del-dag-de-airflow)
 
 ---
 
@@ -107,7 +108,11 @@ El grano de la primera entrega (IES × Programa × Municipio) es incompatible co
 
 > Un registro por `(anio, semestre, departamento, nivel_formacion, sector_ies, genero, estrato)`
 
-Sacrificio documentado: se pierde la granularidad de IES, Programa, Municipio, Metodología y Área del primario. Mitigación: la vista auxiliar `vw_matriculas_detalle` preserva la granularidad fina del SNIES para queries legacy.
+Sacrificio documentado: se pierde la granularidad de IES, Programa, Municipio, Metodología y Área del primario a nivel del star schema. Esta reducción fue necesaria para habilitar la integración con ICETEX y enfocar el análisis en las preguntas de equidad y cobertura que motivan la segunda entrega.
+
+Como mitigación, el pipeline también carga la tabla `legacy_matriculas_detalle` y crea la vista `vw_matriculas_detalle`, que preserva la granularidad fina del SNIES (IES, Programa, Municipio, Núcleo Básico, Metodología, Área). **Esta vista se implementó pero no se utilizó en las consultas finales del dashboard**, que se enfocan exclusivamente en el modelo dimensional integrado. Queda disponible como activo para análisis ad hoc que requieran el detalle original.
+
+![Modelo dimensional — Star Schema](diagrams/star_schemma_dw_matriculas_colV2.png)
 
 ### 4.2. Tabla de Hechos: `fact_educacion_superior`
 
@@ -136,10 +141,6 @@ Restricción de unicidad: `UNIQUE KEY uk_grain (sk_tiempo, sk_ubicacion, sk_demo
 | `dim_sector_ies` | `sector_ies` (oficial/privado/desconocido) | Nueva; derivada de dim_institucion |
 | `dim_estrato` | `estrato` (0..6), `descripcion_estrato` | Nueva; pre-poblada por DDL |
 
-### 4.4. Vista auxiliar: `vw_matriculas_detalle`
-
-Vista sobre la tabla `legacy_matriculas_detalle` (poblada automáticamente por el pipeline) que expone los datos del SNIES con granularidad original: IES, Programa, Municipio, Metodología, Área y Núcleo Básico. Permite ejecutar todas las queries de la primera entrega sin modificaciones.
-
 ---
 
 ## 5. Estrategia de Integración y Supuestos
@@ -163,36 +164,7 @@ Se asume que, a nivel agregado, estos son intercambiables para análisis estrat�
 
 ## 6. Explicación del Pipeline ETL
 
-```
-[educacionCol.csv]──► extract_data()
-                              │
-                              ▼
-                       clean_primary()  ──► educacionCol_clean.csv (auditoría)
-                              │              legacy_matriculas_detalle (tabla)
-                              ▼
-                      aggregate_primary()
-                              │
-                              ▼
-                        ┌─────────────┐
-                        │  integrate  │◄── aggregate_icetex()
-                        │   (FULL     │         ▲
-                        │  OUTER JOIN)│    clean_icetex()
-                        └─────────────┘         ▲
-                              │            extract_icetex_api()
-                              ▼                  │
-                      [df_integrated]    [API Socrata ICETEX]
-                              │
-                              ▼
-                       (Fase B: GX validate)
-                              │
-                              ▼
-                         load_data()
-                        ┌──────────────────────────────────┐
-                        │ 1. load_dimensions() × 6 dims    │
-                        │ 2. map_surrogate_keys() (dict)   │
-                        │ 3. fact_educacion_superior       │
-                        └──────────────────────────────────┘
-```
+![Arquitectura del pipeline ETL](diagrams/architecture_diagramV2.svg)
 
 ### Módulos del pipeline
 
@@ -246,54 +218,129 @@ La suite `fact_educacion_superior_suite` se ejecuta sobre el DataFrame integrado
 
 ## 8. Consultas BI y Dashboard
 
-Todas las queries analíticas están en `sql/bi_queries.sql`, organizadas en tres secciones.
+Las queries que alimentan el dashboard están en `sql/bi_queries.sql` y se agrupan en dos bloques que corresponden uno a uno con los gráficos publicados en Looker Studio. La sección 3 del archivo SQL (consultas sobre `vw_matriculas_detalle`) no se utilizó en el dashboard final.
 
 ### 8.1. Consultas de Integración (SNIES + ICETEX)
 
 Estas consultas son el valor diferencial de la segunda entrega: solo son posibles gracias a la integración de ambas fuentes en una única fact table. Cruzan las métricas `total_matriculados` (SNIES) y `nuevos_beneficiarios_credito` (ICETEX) para responder preguntas de equidad y cobertura.
 
-| Query | Descripción | Métricas cruzadas | Visualización |
+| Query | Descripción | Agregación / Métrica | Visualización |
 |---|---|---|---|
-| 1.1 | **Tasa de cobertura de crédito por departamento** — identifica "desiertos de financiación" donde hay alta matrícula pero baja penetración de créditos ICETEX | `SUM(matriculados)` vs `SUM(beneficiarios)` → `tasa_cobertura_pct` | Mapa coroplético |
-| 1.2 | **Brecha de acceso a crédito por estrato socioeconómico** — mide la equidad: ¿a qué estratos llega más la financiación? | `SUM(matriculados)` vs `SUM(beneficiarios)` por `dim_estrato` | Barras con doble eje |
-| 1.3 | **Tendencia de créditos por sector de IES (oficial vs privado)** — analiza si los créditos se dirigen más a IES públicas o privadas a lo largo del tiempo | `SUM(matriculados)` y `SUM(beneficiarios)` por `dim_sector_ies` × `dim_tiempo` | Líneas / áreas apiladas |
+| 1.1 | **Tasa de cobertura de crédito por departamento** — identifica "desiertos de financiación" donde hay alta matrícula pero baja penetración de créditos ICETEX. | `SUM(beneficiarios) / NULLIF(SUM(matriculados), 0) * 100` → `tasa_cobertura_credito_pct` por `dim_ubicacion.departamento` | Mapa coroplético de Colombia |
+| 1.2 | **Distribución de beneficiarios de crédito por estrato socioeconómico** — mide la equidad: ¿a qué estratos llega más la financiación? Se reporta volumen absoluto y porcentaje del total nacional (excluyendo `estrato=0` imputado para SNIES). | `SUM(beneficiarios)` y `% del total` por `dim_estrato.descripcion_estrato` | Barras horizontales |
+| 1.3 | **Tendencia de créditos por sector de IES (oficial vs privado) por año** — analiza si los créditos se dirigen más a IES públicas o privadas a lo largo del tiempo. Excluye `sector_ies='desconocido'`. | `SUM(matriculados)` y `SUM(beneficiarios)` por `dim_tiempo.anio` × `dim_sector_ies.sector_ies` | Líneas / áreas apiladas |
 
 ### 8.2. Consultas sobre el Modelo Dimensional Agregado
 
 Aprovechan el grano del star schema (`fact_educacion_superior` + dimensiones conformadas).
 
-| Query | Descripción | Visualización |
+| Query | Descripción | Agregación / Métrica | Visualización |
+|---|---|---|---|
+| 2.1 | **Evolución temporal de matrículas por nivel de formación** — excluye `nivel_formacion='exterior'`. | `SUM(matriculados)` por `dim_tiempo.anio` × `dim_nivel_formacion.nivel_formacion` | Líneas múltiples |
+| 2.2 | **Top 10 departamentos por volumen de matrícula** — incluye `porcentaje_nacional` respecto al total del país. | `SUM(matriculados)` y `% nacional` por `dim_ubicacion.departamento`, ordenado DESC, `LIMIT 10` | Barras horizontales |
+| 2.3 | **Brecha de género por nivel de formación** — compara hombres vs mujeres por nivel (pregrado/posgrado), con `porcentaje_mujeres`. Excluye `exterior` y `desconocido`. | `SUM(CASE ... id_genero ...)` por `dim_nivel_formacion` | Barras agrupadas |
+
+### 8.3. Dashboard (Looker Studio)
+
+El dashboard interactivo fue construido en **Google Looker Studio**, conectado directamente al Data Warehouse MySQL (`dw_matriculas_col`) mediante el conector oficial de MySQL. Cada gráfico se alimenta de una **tabla personalizada** con la query correspondiente de `sql/bi_queries.sql`; los KPIs superiores se calculan con campos agregados directamente sobre la fact table.
+
+**KPIs principales (tarjetas de resumen):**
+
+- **Total Matriculados (SNIES 2015–2021)** = `SUM(total_matriculados)`
+- **Beneficiarios ICETEX (2015–2025)** = `SUM(nuevos_beneficiarios_credito)`
+- **Cobertura Nacional de Crédito (%)** = `SUM(nuevos_beneficiarios_credito) / SUM(total_matriculados) * 100`
+
+**Filtros interactivos:** `anio`, `departamento`, `sector_ies` (aplicados globalmente mediante grupos de filtros de Looker).
+
+**Referencia rápida — fuente de cada componente del dashboard:**
+
+| Componente del dashboard | Fuente en el DW | Query |
 |---|---|---|
-| 2.1 | Evolución temporal de matrículas por nivel de formación | Líneas múltiples |
-| 2.2 | Top 10 departamentos por volumen de matrícula (con % nacional) | Barras horizontales |
-| 2.3 | Brecha de género por nivel de formación (Pregrado vs Posgrado) | Barras agrupadas |
+| KPIs superiores | `fact_educacion_superior` (tabla completa) | — |
+| Mapa de cobertura por departamento | Tabla personalizada | Query 1.1 |
+| Beneficiarios por estrato | Tabla personalizada | Query 1.2 |
+| Tendencia por sector de IES | Tabla personalizada | Query 1.3 |
+| Evolución por nivel de formación | Tabla personalizada | Query 2.1 |
+| Top 10 departamentos | Tabla personalizada | Query 2.2 |
+| Brecha de género por nivel | Tabla personalizada | Query 2.3 |
 
-### 8.3. Consultas sobre la Vista Auxiliar (Granularidad Fina)
-
-Usan `vw_matriculas_detalle` para análisis que requieren el detalle original del SNIES (IES, programa, municipio, núcleo básico).
-
-| Query | Descripción | Visualización |
-|---|---|---|
-| 3.1 | Paridad de género por núcleo básico de conocimiento (Top 20) | Barras divergentes |
-| 3.2 | Distribución de niveles: grandes ejes vs otras regiones | Barras apiladas |
-| 3.3 | Top 10 instituciones públicas por matrícula universitaria | Tabla / barras |
-
-### 8.4. Dashboard (Looker Studio)
-
-El dashboard interactivo fue construido en **Google Looker Studio**, conectado directamente al Data Warehouse MySQL (`dw_matriculas_col`). Se alimenta de las consultas de la sección 8.1 (integración) y 8.2 (modelo dimensional).
-
-**KPIs principales:**
-
-- **Cobertura crediticia nacional (%)** = Σ `nuevos_beneficiarios_credito` / Σ `total_matriculados`
-- **Brecha por estrato**: diferencia en tasa de cobertura entre estratos 1–2 vs 5–6
-- **Desiertos crediticios**: departamentos con alta matrícula y baja cobertura de crédito
-
-<!-- Insertar captura del dashboard aquí -->
-![Dashboard Looker Studio](docs/dashboard_looker.png)
+![Dashboard Looker Studio](diagrams/dashboard_lookerV2.png)
 
 ---
 
-## 9. Instrucciones de Ejecución (Local)
+## 9. Estructura del Proyecto
+
+Estructura plana, sin packaging: `main.py` se ejecuta directamente desde la raíz y el DAG de Airflow inserta `/opt/airflow/src` en `sys.path`. Los directorios marcados como *gitignored* existen en disco pero no se versionan; los archivos bajo `gx/` se generan automáticamente en el primer run del pipeline.
+
+```
+project_delivery_2/
+├── airflow/                                        # infra Airflow + Docker + datos
+│   ├── docker-compose.yaml                         # servicios airflow + mysql-dw
+│   ├── .env                                        # credenciales reales (gitignored)
+│   ├── .env.example                                # plantilla de credenciales
+│   ├── requirements.txt                            # deps de los contenedores Airflow
+│   ├── config/                                     # config Airflow (gitignored, contiene .gitkeep)
+│   ├── dags/
+│   │   └── etl_ods4.py                             # DAG: inserta /opt/airflow/src en sys.path
+│   ├── data/
+│   │   ├── raw/
+│   │   │   ├── educacionCol.csv                    # dataset primario SNIES (gitignored)
+│   │   │   ├── descripcion_dataset_api.txt         # documentación de la API ICETEX
+│   │   │   └── educacionCol_descripcion_columnas_dataset.csv
+│   │   ├── processed/                              # CSVs limpios exportados (gitignored)
+│   │   │   ├── educacionCol_clean.csv
+│   │   │   ├── educacionCol_aggregated.csv
+│   │   │   └── creditos_icetex_clean.csv
+│   │   └── staging/                                # pickles intermedios del DAG (*.pkl, gitignored)
+│   ├── logs/                                       # logs Airflow (gitignored)
+│   └── plugins/
+├── src/                                            # código del pipeline (flat, sin subpaquetes)
+│   ├── main.py                                     # entry point: python src/main.py
+│   ├── config.py                                   # carga airflow/.env, expone rutas y URLs
+│   ├── extract.py                                  # extract_data (CSV) + extract_icetex_api
+│   ├── transform.py                                # clean/aggregate primary + icetex
+│   ├── integrate.py                                # FULL OUTER JOIN de ambas fuentes
+│   ├── load.py                                     # 6 dims + fact con dict-mapping anti-OOM
+│   └── validate.py                                 # runner Great Expectations
+├── sql/
+│   ├── init_dw_matriculas_col.sql                  # DDL: 6 dims + fact
+│   ├── bi_queries.sql                              # queries analíticas del dashboard
+│   ├── vw_matriculas_detalle.sql                   # vista auxiliar (implementada, no usada en dashboard)
+│   ├── workbench_diagram.mwb                       # modelo MySQL Workbench
+│   └── workbench_diagram.mwb.bak
+├── gx/                                             # Great Expectations (auto-generado, gitignored)
+│   ├── great_expectations.yml
+│   ├── expectations/
+│   ├── checkpoints/
+│   └── uncommitted/data_docs/                      # reportes HTML navegables
+├── notebooks/
+│   └── eda.ipynb                                   # EDA + profiling de ambas fuentes
+├── diagrams/
+│   ├── architecture_diagramV2.svg                  # arquitectura del pipeline
+│   ├── star_schemma_dw_matriculas_colV2.svg/.png   # modelo dimensional
+│   ├── classic_star_schemma_dw_matriculas_col.*    # modelo clásico (1ra entrega)
+│   ├── dag_disign.png                              # diseño del DAG
+│   ├── dashboard_lookerV2.png                      # captura del dashboard
+│   └── dashboard_ODS4.png
+├── requirements.txt                                # deps del pipeline local
+├── ETL_ETLProject_SecondDelivery.pdf               # enunciado de la entrega
+├── ETL_ETLProject_FirstDelivery.pdf
+├── .gitignore
+└── README.md
+```
+
+**Convención de rutas en el código:**
+
+- `src/main.py` resuelve `project_root = Path(__file__).resolve().parent.parent`.
+- `.env` se carga desde `project_root / "airflow" / ".env"`.
+- Datos crudos: `project_root / "airflow" / "data" / "raw"`.
+- Datos procesados: `project_root / "airflow" / "data" / "processed"`.
+- Scripts SQL: `project_root / "sql"`.
+- Dentro de Docker, `airflow/data/` se monta en `/opt/airflow/data/`.
+
+---
+
+## 10. Instrucciones de Ejecución (Local)
 
 ### Prerrequisitos
 
@@ -386,11 +433,7 @@ SELECT SUM(nuevos_beneficiarios_credito) FROM fact_educacion_superior;
 
 El DAG `etl_ods4` (`airflow/dags/etl_ods4.py`) replica el pipeline local con `PythonOperator` por cada función. Las tareas intercambian datos mediante pickles en `/opt/airflow/data/staging/`.
 
-```
-extract_primary ──► clean_primary ──► aggregate_primary ──┐
-                                                          ├──► integrate ──► validate_gx ──► load_dw
-extract_icetex  ──► clean_icetex  ──► aggregate_icetex  ──┘
-```
+![Diseño del DAG de Airflow](diagrams/dag_disign.png)
 
 ### Tareas del DAG (9)
 
