@@ -1,46 +1,40 @@
+*.md
+.*
+*.csv
+*.txt
+!requirements.txt
+
+!README.md
+!.gitignore
+!.gitkeep
+!.env.example
+/airflow/config/*.json
+
+# --- Pipeline staging artifacts ---
+*.pkl
+airflow/config/airflow.cfg
+airflow/logs/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+# Entornos virtuales
 venv/
 .venv/
 env/
+.env
 
-# --- Datos (airflow/data/) ---
-airflow/data/raw/*
-!airflow/data/raw/.gitkeep
-!airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv
-!airflow/data/raw/descripcion_dataset_api.txt
-airflow/data/processed/*
-!airflow/data/processed/.gitkeep
-
-# --- Carpeta data/ legacy (ya migrada a airflow/data/) ---
-data/
-
-# --- Airflow runtime ---
-airflow/logs/*
-!airflow/logs/.gitkeep
-airflow/.env
-airflow/config/airflow.cfg
-
-# --- Jupyter / Notebooks ---
-.ipynb_checkpoints
-*/.ipynb_checkpoints/*
-
-# --- Logs y Bases de Datos Locales ---
 *.log
 *.sql.gz
 
-# --- SO ---
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
 .DS_Store
 Thumbs.db
 
-# --- Dotfiles internos (Claude, Gemini, etc.) ---
-.*
-!.gitignore
-
-# --- Markdown (solo README visible) ---
-*.md
-!README.md
+!airflow/data/raw/descripcion_dataset_api.txt
+!airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv

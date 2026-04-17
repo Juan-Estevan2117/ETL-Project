@@ -1,0 +1,14 @@
+Nombre de la columna	Descripción	Nombre del campo API	Tipo de Dato
+VIGENCIA	Hace referencia al año correspondiente al periodo de otorgamiento de la ayuda financiera	vigencia	Número
+PERIODO OTORGAMIENTO	Hace referencia al periodo de otorgamiento de la ayuda financiera (periodo académico para el caso de propios, semestre calendario para el caso de fondos en administración)	periodo_otorgamiento	Texto
+SEXO AL NACER	Hace referencia al sexo del beneficiario asignado al nacer y manifestado en el Formulario de solicitud de ayuda financiera	sexo_al_nacer	Texto
+ESTRATO SOCIOECONÓMICO	Corresponde al estrato al que pertenece el beneficiario	estrato_socio_economico	Número
+CÓDIGO DEDEPARTAMENTO DE ORIGEN	Código del departamento de nacimiento del beneficiario, empleando la codificación División Político-administrativa de Colombia - DIVIPOLA del DANE.	codigo_dedepartamento_de	Texto
+DEPARTAMENTO DE ORIGEN	Departamento de nacimiento del beneficiario, empleando los nombres de departamento de la codificación DIVIPOLA.	departamento_de_origen	Texto
+CATEGORÍA DEL MUNICIPIO DE ORIGEN	Departamento de nacimiento del beneficiario, empleando los nombres de departamento de la codificación DIVIPOLA.	categoria_del_municipio_de	Texto
+SECTOR IES	Corresponde a la IES donde estudia / estudió el beneficiario	sector_ies	Texto
+NIVEL DE FORMACIÓN	Corresponde al nivel académico que estudia / estudió el beneficiario	nivel_de_formacion	Texto
+MODALIDAD DE LÍNEA	Es si es Crédito Exterior, Posgrado País o Pregrado	modalidad_de_linea	Texto
+MODALIDAD DEL CRÉDITO	Condonable, subsidiado, Mixto, reembolsable	modalidad_del_credito	Texto
+RANGO DEL VALOR TOTAL DESEMBOLSADO	Corresponde al grupo decil al cual corresponde el VALOR DESEMBOLSADO TOTAL para el respectivo crédito. La creación de estos deciles se realiza por VIGENCIA y por MODALIDAD DE LÍNEA.	rango_del_valor_total	Texto
+NÚMERO DE NUEVOS BENEFICIARIOS DE CRÉDITO	Número total de nuevas ayudas financieras otorgadas a estudiantes, que hayan surtido el proceso completo de inscripción, aprobación, legalización y desembolso	numero_de_nuevos_beneficiarios	Número
