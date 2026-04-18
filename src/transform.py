@@ -1,172 +1,190 @@
 import pandas as pd
-import numpy as np
 import unicodedata
 import re
+from typing import Dict
 
-# Importamos el módulo de extracción (modularidad)
-from extract import extract_data
+# --- Funciones de Limpieza y Transformación para el Pipeline ETL ---
 
 def clean_text(text: str) -> str:
     """
-    Limpia y estandariza cadenas de texto eliminando tildes, puntuación y espacios adicionales.
-
-    Args:
-        text (str): Cadena de texto a limpiar. Puede ser de cualquier tipo o NaN.
-
-    Returns:
-        str: Cadena de texto en minúsculas, sin tildes ni signos de puntuación.
-        Retorna el mismo valor si la entrada es NaN (Not a Number).
+    Limpia y estandariza cadenas de texto.
+    Elimina tildes, puntuación, espacios extra y convierte a minúsculas.
     """
-    if pd.isna(text):
+    if not isinstance(text, str):
         return text
-    
-    # Convierte a minúsculas y elimina espacios al principio y al final
-    text = str(text).lower().strip()
-    
-    # Descompone los caracteres acentuados (NFD) y elimina las marcas diacríticas (Mn = Nonspacing_Mark)
+    text = text.lower().strip()
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
-    
-    # Reemplaza signos de puntuación comunes por una cadena vacía
     text = re.sub(r'[.,]', '', text)
-    
-    # Reduce múltiples espacios consecutivos a un solo espacio
     text = re.sub(r'\s+', ' ', text)
-    
     return text
 
-def clean_and_transform(df: pd.DataFrame) -> pd.DataFrame:
+def clean_primary(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aplica las reglas de negocio y limpieza de datos al DataFrame crudo.
-
-    Args:
-        df (pd.DataFrame): DataFrame original proveniente de la fase de Extracción.
-
-    Returns:
-        pd.DataFrame: DataFrame limpio, estandarizado y agrupado a la granularidad 
-        requerida para la Tabla de Hechos.
+    Aplica la limpieza y estandarización al dataset primario (SNIES).
     """
-    print("🧹 Iniciando proceso de transformación y limpieza...")
-
-    # ---------------------------------------------------------
-    # 1. Eliminación de Duplicados Exactos (Errores del SNIES)
-    # ---------------------------------------------------------
-    # Se eliminan filas que son 100% idénticas en todas sus columnas para evitar inflar las métricas.
-    filas_antes = df.shape[0]
-    df = df.drop_duplicates()
-    print(f"   - Se eliminaron {filas_antes - df.shape[0]} filas exactamente duplicadas (clones).")
-
-    # ---------------------------------------------------------
-    # 2. Renombrado de Columnas a Formato de Base de Datos
-    # ---------------------------------------------------------
-    # Mapeo manual para asegurar compatibilidad exacta con el Data Warehouse (SQL)
+    print("🧹 Limpiando dataset primario (SNIES)...")
+    
+    # 1. Renombrar columnas
     column_mapping = {
-        'Código de la Institución': 'codigo_ies',
-        'Institución de Educación Superior (IES)': 'nombre_ies',
-        'Principal oSeccional': 'principal_seccional',
-        'Id_Sector': 'sector',
-        'Id_Caracter': 'caracter',
-        'Código SNIES delprograma': 'codigo_snies',
-        'Programa Académico': 'nombre_programa',
-        'Id_Nivel_Formacion': 'nivel_formacion',
-        'Id_Metodologia': 'metodologia',
-        'Id_Area': 'area_conocimiento',
-        'Núcleo Básico del Conocimiento (NBC)': 'nucleo_basico',
-        'Código del Municipio(Programa)': 'codigo_municipio',
-        'Municipio de oferta del programa': 'municipio',
-        'Código del Departamento(Programa)': 'codigo_departamento',
-        'Departamento de oferta del programa': 'departamento',
-        'Id Género': 'id_genero',
-        'Año': 'anio',
-        'Semestre': 'semestre',
-        'Total Matriculados': 'total_matriculados'
+        'Código de la Institución': 'codigo_ies', 'Institución de Educación Superior (IES)': 'nombre_ies',
+        'Principal oSeccional': 'principal_seccional', 'Id_Sector': 'sector_ies',
+        'Id_Caracter': 'caracter', 'Código SNIES delprograma': 'codigo_snies',
+        'Programa Académico': 'nombre_programa', 'Id_Nivel_Formacion': 'nivel_formacion',
+        'Id_Metodologia': 'metodologia', 'Id_Area': 'area_conocimiento',
+        'Núcleo Básico del Conocimiento (NBC)': 'nucleo_basico', 'Código del Municipio(Programa)': 'codigo_municipio',
+        'Municipio de oferta del programa': 'municipio', 'Código del Departamento(Programa)': 'codigo_departamento',
+        'Departamento de oferta del programa': 'departamento', 'Id Género': 'id_genero',
+        'Año': 'anio', 'Semestre': 'semestre', 'Total Matriculados': 'total_matriculados'
     }
     df = df.rename(columns=column_mapping)
-    print("   - Columnas renombradas manualmente (Alineadas con el DW).")
 
-    # ---------------------------------------------------------
-    # 3. Casteo de Métrica Principal y Filtrado del Grano
-    # ---------------------------------------------------------
-    # Convierte la columna de métrica a numérico. Valores no numéricos se vuelven NaN.
-    df['total_matriculados'] = pd.to_numeric(df['total_matriculados'], errors='coerce')
-    filas_antes_nulos = df.shape[0]
-    
-    # El grano exige al menos 1 estudiante matriculado. Se descartan nulos y ceros.
-    df = df.dropna(subset=['total_matriculados'])
-    df = df[df['total_matriculados'] > 0]
-    df['total_matriculados'] = df['total_matriculados'].astype(int)
-    print(f"   - Se eliminaron {filas_antes_nulos - df.shape[0]} filas sin matrículas válidas.")
+    # 2. Eliminar duplicados exactos
+    df = df.drop_duplicates()
 
-    # ---------------------------------------------------------
-    # 4. Estandarización de Textos y Homologación Geográfica
-    # ---------------------------------------------------------
-    # Columnas categóricas a normalizar con clean_text()
-    columnas_texto = [
-        'nombre_ies', 'principal_seccional', 'nombre_programa', 
-        'nucleo_basico', 'municipio', 'departamento'
-    ]
+    # 3. Limpieza de textos y homologación geográfica
+    text_cols = ['municipio', 'departamento']
+    for col in text_cols:
+        df[col] = df[col].apply(clean_text)
     
-    for col in columnas_texto:
-        if col in df.columns:
-            df[col] = df[col].apply(clean_text)
-            
-    # Homologación manual forzada para reducir los departamentos de 54 a los 33 oficiales
-    mapa_deptos = {
-        'bogota dc': 'bogota',
-        'narinio': 'narino',
-        'guajira': 'la guajira',
+    # El profiling reveló inconsistencias específicas
+    geo_map = {
+        'bogota dc': 'bogota', 'narinio': 'narino', 'guajira': 'la guajira',
         'san andres y provi': 'san andres y providencia',
         'archipielago de sa': 'san andres y providencia',
-        'archipielago de san andres providencia y santa catalina': 'san andres y providencia'
+        'archipielago de san andres providencia y santa catalina': 'san andres y providencia',
     }
+    df['departamento'] = df['departamento'].replace(geo_map)
+    df['municipio'] = df['municipio'].replace({'bogota dc': 'bogota', 'santafe de bogota': 'bogota'})
+
+    # 4. Mapeo de IDs a textos descriptivos (Nivel y Sector)
+    # IDs oficiales del SNIES (Ministerio de Educacion). Verificado contra la
+    # distribucion real de matriculas: ID=6 (universitaria) concentra ~16M,
+    # ID=5 (tecnologica) ~6M, doctorado pocos miles.
+    # Todos los valores de dominio se almacenan en minusculas.
+    nivel_map = {
+        1: 'especializacion',        # Especializacion Universitaria
+        2: 'tecnica profesional',
+        3: 'doctorado',
+        4: 'maestria',
+        5: 'tecnologica',
+        6: 'universitaria',
+        7: 'especializacion',        # Especializacion Medico Quirurgica
+        8: 'especializacion',        # Especializacion Tecnologica
+        10: 'especializacion',       # Especializacion Tecnico Profesional
+    }
+    sector_map = {
+        1: 'oficial',
+        2: 'privado'
+    }
+
+    df['nivel_formacion'] = pd.to_numeric(df['nivel_formacion'], errors='coerce').map(nivel_map).fillna('desconocido')
+    df['sector_ies'] = pd.to_numeric(df['sector_ies'], errors='coerce').map(sector_map).fillna('desconocido')
+
+    # 5. Casteo de tipos
+    df['total_matriculados'] = pd.to_numeric(df['total_matriculados'], errors='coerce').fillna(0).astype(int)
+    df = df[df['total_matriculados'] > 0]
     
-    # Homologación forzada para la capital
-    mapa_municipios = {
+    print("✅ Limpieza del dataset primario completada.")
+    return df
+
+def aggregate_primary(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega el dataset primario al grano común del Data Warehouse.
+    """
+    print("🏗️  Agregando dataset primario al grano común...")
+    
+    # Llaves para la agregación
+    agg_keys = ['anio', 'semestre', 'departamento', 'nivel_formacion', 'sector_ies', 'id_genero']
+    
+    # Agrupar y sumar los matriculados
+    df_agg = df.groupby(agg_keys, as_index=False).agg(total_matriculados=('total_matriculados', 'sum'))
+    
+    # Añadir columna de estrato por defecto
+    df_agg['estrato'] = 0  # Imputar 'Desconocido'
+    
+    print(f"✅ Agregación primaria completada. Filas resultantes: {df_agg.shape[0]}")
+    return df_agg
+
+def clean_icetex(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia y transforma el dataset de la API de ICETEX.
+    Basado en los hallazgos del profiling (Fase 0).
+    """
+    print("🧹 Limpiando dataset de la API de ICETEX...")
+    df = df.copy()
+
+    # 1. Renombrar y seleccionar columnas
+    rename_map = {
+        'vigencia': 'anio',
+        'periodo_otorgamiento': 'periodo',
+        'sexo_al_nacer': 'genero',
+        'estrato_socio_economico': 'estrato',
+        'departamento_de_origen': 'departamento',
+        'sector_ies': 'sector_ies',
+        'nivel_de_formacion': 'nivel_formacion',
+        'numero_de_nuevos_beneficiarios': 'nuevos_beneficiarios_credito'
+    }
+    df = df.rename(columns=rename_map)
+    df = df[list(rename_map.values())]
+
+    # 2. Descartar filas según hallazgos del profiling
+    df = df[df['genero'] != 'Intersexual']  # 14 filas
+    df = df[df['nivel_formacion'] != 'Normalista']  # 7 filas
+
+    # 3. Extraer semestre del 'periodo' (e.g., "2015-1")
+    df['semestre'] = df['periodo'].str.split('-').str[1]
+
+    # 4. Mapeo de valores
+    df['id_genero'] = df['genero'].map({'Femenino': 2, 'Masculino': 1})
+    df['sector_ies'] = df['sector_ies'].map({'OFICIAL': 'oficial', 'PRIVADO': 'privado', 'N/A': 'desconocido'})
+
+    # Homologación de Nivel de Formación (11 valores ICETEX → 7 canónicos, en minúsculas)
+    nivel_map = {
+        'Formación técnica profesional': 'tecnica profesional', 'Tecnológico': 'tecnologica',
+        'Universitario': 'universitaria', 'Especialización universitaria': 'especializacion',
+        'Especialización médico quirúrgica': 'especializacion', 'Especialización tecnológica': 'especializacion',
+        'Especialización técnico profesional': 'especializacion', 'Maestría': 'maestria',
+        'Doctorado': 'doctorado', 'Exterior': 'exterior'
+    }
+    df['nivel_formacion'] = df['nivel_formacion'].replace(nivel_map)
+
+    # 5. Limpieza de texto y homologación geográfica
+    # Las claves del geo_map deben ser POST-clean_text (sin comas, puntos ni tildes)
+    df['departamento'] = df['departamento'].apply(clean_text)
+    geo_map = {
         'bogota dc': 'bogota',
-        'santafe de bogota': 'bogota',
-        'bogota d c': 'bogota',
-        'bogota': 'bogota'
+        'archipielago de san andres providencia y santa catalina': 'san andres y providencia',
     }
-
-    # Aplica diccionarios de homologación si las columnas existen en el DataFrame
-    for col_dep in ['departamento', 'departamento_ies']:
-        if col_dep in df.columns:
-            df[col_dep] = df[col_dep].replace(mapa_deptos)
-            
-    for col_mun in ['municipio', 'municipio_ies']:
-        if col_mun in df.columns:
-            df[col_mun] = df[col_mun].replace(mapa_municipios)
-
-    print("   - Se estandarizaron los nombres de todos los Departamentos y Municipios.")
-    print(f"   - Se normalizaron {len(columnas_texto)} columnas de texto (Tildes y Puntuación eliminadas).")
-
-    # ---------------------------------------------------------
-    # 5. Adaptación de Tipos para Carga en MySQL (SQLAlchemy)
-    # ---------------------------------------------------------
-    # El SNIES puede traer valores "ND" que se reemplazan por -1 en enteros
-    df['codigo_snies'] = pd.to_numeric(df['codigo_snies'], errors='coerce').fillna(-1).astype(int)
+    df['departamento'] = df['departamento'].replace(geo_map)
     
-    # Se fuerza a string porque en el SQL DDL están definidos como VARCHAR 
-    # y SQLAlchemy fallaría al intentar mapear INT64 con VARCHAR.
-    for col in ['nivel_formacion', 'metodologia', 'sector', 'caracter']:
-        if col in df.columns:
-            df[col] = df[col].astype(str)
-    
-    # ---------------------------------------------------------
-    # 6. Agrupación Final (Consolidación de la Métrica)
-    # ---------------------------------------------------------
-    # Llave compuesta por todas las dimensiones. Si existen varios registros para la misma llave,
-    # se suman sus estudiantes (ej. reportes separados en distintos meses del mismo semestre).
-    llave_negocio = [
-        'codigo_ies', 'nombre_ies', 'principal_seccional',
-        'sector', 'caracter', 'codigo_snies', 'nombre_programa',
-        'nivel_formacion', 'metodologia', 'area_conocimiento', 'nucleo_basico',
-        'codigo_municipio', 'municipio',
-        'codigo_departamento', 'departamento',
-        'anio', 'semestre', 'id_genero'
-    ]
-    
-    df_agrupado = df.groupby(llave_negocio, as_index=False)['total_matriculados'].sum()
-    print(f"   - Filas finales consolidadas tras agrupar: {df_agrupado.shape[0]}")
+    # 6. Casteo de tipos
+    # id_genero se trata por separado: NO se aplica fillna(0) para evitar introducir
+    # valores inválidos (0 no es un género reconocido). Las filas sin mapeo se descartan.
+    numeric_cols = ['anio', 'semestre', 'estrato', 'nuevos_beneficiarios_credito']
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-    print("✅ Transformación completada.")
-    return df_agrupado
+    df['id_genero'] = pd.to_numeric(df['id_genero'], errors='coerce')
+    filas_antes = len(df)
+    df = df.dropna(subset=['id_genero'])
+    descartadas = filas_antes - len(df)
+    if descartadas > 0:
+        print(f"   -> {descartadas} filas descartadas por género no reconocido en ICETEX.")
+    df['id_genero'] = df['id_genero'].astype(int)
+    
+    print("✅ Limpieza del dataset de ICETEX completada.")
+    return df
+
+def aggregate_icetex(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrega el dataset de ICETEX al grano común del Data Warehouse.
+    """
+    print("🏗️  Agregando dataset de ICETEX al grano común...")
+    
+    # Llaves para la agregación (incluye estrato)
+    agg_keys = ['anio', 'semestre', 'departamento', 'nivel_formacion', 'sector_ies', 'id_genero', 'estrato']
+    
+    df_agg = df.groupby(agg_keys, as_index=False).agg(nuevos_beneficiarios_credito=('nuevos_beneficiarios_credito', 'sum'))
+    
+    print(f"✅ Agregación de ICETEX completada. Filas resultantes: {df_agg.shape[0]}")
+    return df_agg

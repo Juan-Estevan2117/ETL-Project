@@ -1,3 +1,25 @@
+*.md
+.*
+*.csv
+*.txt
+!requirements.txt
+
+!README.md
+!.gitignore
+!.gitkeep
+!.env.example
+/airflow/config/*.json
+
+# --- Pipeline staging artifacts ---
+*.pkl
+airflow/config/airflow.cfg
+airflow/logs/
+
+# --- Great Expectations (auto-generado por validate.py) ---
+# Se crea solo al primer run del pipeline (en local y en el contenedor).
+/gx/
+/airflow/data/gx/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
@@ -10,29 +32,14 @@ venv/
 env/
 .env
 
-# --- Datos (ETL) ---
-data/processed/*
-!data/processed/.gitkeep
-data/raw/*
-!data/raw/educacionCol_descripcion_columnas_dataset.csv
-!sql/.gitkeep
-!src/.gitkeep
-
-# --- Jupyter / Notebooks ---
-.ipynb_checkpoints
-*/.ipynb_checkpoints/*
-
-# --- Logs y Bases de Datos Locales ---
 *.log
 *.sql.gz
 
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
 
-# --- SO (Linux/Mac/Windows) ---
 .DS_Store
 Thumbs.db
 
-.*
-!.gitignore
-
-*.md
-!README.md
+!airflow/data/raw/descripcion_dataset_api.txt
+!airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv

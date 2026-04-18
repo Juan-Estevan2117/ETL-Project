@@ -1,178 +1,204 @@
 -- ==============================================================================
--- CONSULTAS PARA BUSINESS INTELLIGENCE (BI) Y DASHBOARDS
--- Escenario de Negocio: Brechas de Acceso a la Educación Superior (ODS 4)
+-- CONSULTAS PARA BUSINESS INTELLIGENCE (BI) Y DASHBOARDS (2da Entrega)
+-- Escenario: Analisis de Matriculas (SNIES) y Creditos Educativos (ICETEX)
+--
+-- Convenciones:
+--   - nivel_formacion y sector_ies almacenados en minusculas.
+--   - estrato 0 = 'Desconocido' (imputado para datos de SNIES).
+--   - La fact table tiene filas solo-SNIES (beneficiarios=0) y solo-ICETEX
+--     (matriculados=0); las metricas se agregan con SUM para cruzar fuentes.
 -- ==============================================================================
 
 USE dw_matriculas_col;
 
+-- ==============================================================================
+-- SECCION 1: CONSULTAS DE INTEGRACION (SNIES + ICETEX)
+-- Solo son posibles gracias a la integracion de ambas fuentes.
+-- ==============================================================================
+
 -- ------------------------------------------------------------------------------
--- 1. KPI: Índice de Concentración de Matrículas (Top Departamentos vs Resto)
--- Propósito: Evidenciar la centralización del acceso a la educación.
--- Visualización Sugerida: Mapa de Calor (Choropleth Map) o Gráfico de Treemap.
+-- 1.1. Tasa de Cobertura de Credito por Departamento
+-- Identifica "desiertos de financiacion": alta matricula, baja cobertura.
+-- Visualizacion: Mapa coropletico con doble metrica.
 -- ------------------------------------------------------------------------------
 SELECT
-    CASE du.departamento
-        WHEN 'bogota' THEN 'Bogotá, Colombia'
-        WHEN 'antioquia' THEN 'Antioquia, Colombia'
-        WHEN 'valle del cauca' THEN 'Valle del Cauca, Colombia'
-        WHEN 'atlantico' THEN 'Atlántico, Colombia'
-        WHEN 'santander' THEN 'Santander, Colombia'
-        WHEN 'bolivar' THEN 'Bolívar, Colombia'
-        WHEN 'cordoba' THEN 'Córdoba, Colombia'
-        WHEN 'norte de santander' THEN 'Norte de Santander, Colombia'
-        WHEN 'boyaca' THEN 'Boyacá, Colombia'
-        WHEN 'narino' THEN 'Nariño, Colombia'
-        WHEN 'tolima' THEN 'Tolima, Colombia'
-        WHEN 'magdalena' THEN 'Magdalena, Colombia'
-        WHEN 'cundinamarca' THEN 'Cundinamarca, Colombia'
-        WHEN 'cesar' THEN 'Cesar, Colombia'
-        WHEN 'huila' THEN 'Huila, Colombia'
-        WHEN 'sucre' THEN 'Sucre, Colombia'
-        WHEN 'cauca' THEN 'Cauca, Colombia'
-        WHEN 'meta' THEN 'Meta, Colombia'
-        WHEN 'caldas' THEN 'Caldas, Colombia'
-        WHEN 'risaralda' THEN 'Risaralda, Colombia'
-        WHEN 'choco' THEN 'Chocó, Colombia'
-        WHEN 'quindio' THEN 'Quindío, Colombia'
-        WHEN 'casanare' THEN 'Casanare, Colombia'
-        WHEN 'caqueta' THEN 'Caquetá, Colombia'
-        WHEN 'putumayo' THEN 'Putumayo, Colombia'
-        WHEN 'la guajira' THEN 'La Guajira, Colombia'
-        WHEN 'arauca' THEN 'Arauca, Colombia'
-        WHEN 'guaviare' THEN 'Guaviare, Colombia'
-        WHEN 'amazonas' THEN 'Amazonas, Colombia'
-        WHEN 'vichada' THEN 'Vichada, Colombia'
-        WHEN 'guainia' THEN 'Guainía, Colombia'
-        WHEN 'vaupes' THEN 'Vaupés, Colombia'
-        WHEN 'san andres y providencia' THEN 'San Andrés y Providencia, Colombia'
-        ELSE CONCAT(du.departamento, ', Colombia')
-    END AS departamento_oficial,
-    SUM(fm.total_matriculados) AS total_estudiantes,
-    ROUND(SUM(fm.total_matriculados) / (SELECT SUM(total_matriculados) FROM fact_matriculas) * 100, 2) AS participacion_nacional_pct
-FROM fact_matriculas fm
-INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
-GROUP BY du.departamento
-ORDER BY SUM(fm.total_matriculados) DESC;
-
-
--- ------------------------------------------------------------------------------
--- 2. KPI: Tasa de Paridad de Género por Área de Conocimiento (Foco en STEM)
--- Propósito: Identificar la brecha de género (ODS 5) en carreras científicas y técnicas.
--- Visualización Sugerida: Gráfico de Barras Apiladas 100% o Gráfico de Pirámide.
--- ------------------------------------------------------------------------------
-SELECT 
-    UPPER(dp.nucleo_basico) AS campo_de_estudio,
-    SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) AS total_mujeres,
-    SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END) AS total_hombres,
+    UPPER(du.departamento) AS departamento,
+    SUM(fe.total_matriculados) AS total_matriculados,
+    SUM(fe.nuevos_beneficiarios_credito) AS total_beneficiarios_credito,
     ROUND(
-        SUM(CASE WHEN dd.descripcion_genero = 'Femenino' THEN fm.total_matriculados ELSE 0 END) / 
-        NULLIF(SUM(CASE WHEN dd.descripcion_genero = 'Masculino' THEN fm.total_matriculados ELSE 0 END), 0) * 100
-    , 2) AS indice_paridad
-FROM fact_matriculas fm
-INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
-INNER JOIN dim_demografia dd ON fm.sk_demografia = dd.sk_demografia
-GROUP BY dp.nucleo_basico
-ORDER BY SUM(fm.total_matriculados) DESC
+        (SUM(fe.nuevos_beneficiarios_credito) / NULLIF(SUM(fe.total_matriculados), 0)) * 100,
+        2
+    ) AS tasa_cobertura_credito_pct
+FROM fact_educacion_superior fe
+JOIN dim_ubicacion du ON fe.sk_ubicacion = du.sk_ubicacion
+GROUP BY du.departamento
+ORDER BY tasa_cobertura_credito_pct DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 1.2. Distribucion de Beneficiarios de Credito por Estrato Socioeconomico
+-- Mide la equidad: a que estratos llega mas la financiacion de ICETEX?
+-- Nota: SNIES no reporta estrato (imputado como 0), por lo que no es posible
+-- calcular "tasa de cobertura" por estrato. En su lugar se analiza:
+--   (a) volumen absoluto de beneficiarios por estrato
+--   (b) porcentaje del total nacional que recibe cada estrato
+-- Visualizacion: Barras con doble eje (volumen absoluto y % del total).
+-- ------------------------------------------------------------------------------
+SELECT
+    de.descripcion_estrato,
+    SUM(fe.nuevos_beneficiarios_credito) AS total_beneficiarios_credito,
+    ROUND(
+        SUM(fe.nuevos_beneficiarios_credito) * 100.0 /
+        (SELECT SUM(nuevos_beneficiarios_credito)
+           FROM fact_educacion_superior fe2
+           JOIN dim_estrato de2 ON fe2.sk_estrato = de2.sk_estrato
+          WHERE de2.estrato > 0),
+        2
+    ) AS porcentaje_del_total_pct
+FROM fact_educacion_superior fe
+JOIN dim_estrato de ON fe.sk_estrato = de.sk_estrato
+WHERE de.estrato > 0
+GROUP BY de.descripcion_estrato, de.estrato
+ORDER BY de.estrato ASC;
+
+
+-- ------------------------------------------------------------------------------
+-- 1.3. Tendencia: Creditos por Sector de IES (Oficial vs Privado) por Anio
+-- Analiza si los creditos se dirigen mas a IES publicas o privadas.
+-- Se excluye sector 'desconocido'.
+-- Visualizacion: Lineas o areas apiladas.
+-- ------------------------------------------------------------------------------
+SELECT
+    dt.anio,
+    dsi.sector_ies,
+    SUM(fe.total_matriculados) AS total_matriculados,
+    SUM(fe.nuevos_beneficiarios_credito) AS total_beneficiarios_credito
+FROM fact_educacion_superior fe
+JOIN dim_tiempo dt ON fe.sk_tiempo = dt.sk_tiempo
+JOIN dim_sector_ies dsi ON fe.sk_sector_ies = dsi.sk_sector_ies
+WHERE dsi.sector_ies != 'desconocido'
+GROUP BY dt.anio, dsi.sector_ies
+ORDER BY dt.anio, dsi.sector_ies;
+
+
+-- ==============================================================================
+-- SECCION 2: CONSULTAS SOBRE EL FACT TABLE AGREGADO
+-- Analisis que aprovechan el grano del nuevo modelo dimensional.
+-- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 2.1. Evolucion Temporal de Matriculas por Nivel de Formacion
+-- Visualizacion: Lineas multiples (una por nivel).
+-- ------------------------------------------------------------------------------
+SELECT
+    dt.anio,
+    dnf.nivel_formacion,
+    dnf.tipo_formacion,
+    SUM(fe.total_matriculados) AS total_matriculados
+FROM fact_educacion_superior fe
+JOIN dim_tiempo dt ON fe.sk_tiempo = dt.sk_tiempo
+JOIN dim_nivel_formacion dnf ON fe.sk_nivel_formacion = dnf.sk_nivel_formacion
+WHERE dnf.nivel_formacion != 'exterior'
+GROUP BY dt.anio, dnf.nivel_formacion, dnf.tipo_formacion
+ORDER BY dt.anio, total_matriculados DESC;
+
+
+-- ------------------------------------------------------------------------------
+-- 2.2. Top 10 Departamentos por Volumen de Matricula
+-- Visualizacion: Barras horizontales con porcentaje nacional.
+-- ------------------------------------------------------------------------------
+SELECT
+    UPPER(du.departamento) AS departamento,
+    SUM(fe.total_matriculados) AS total_matriculados,
+    ROUND(
+        SUM(fe.total_matriculados) * 100.0 /
+        (SELECT SUM(total_matriculados) FROM fact_educacion_superior),
+        2
+    ) AS porcentaje_nacional
+FROM fact_educacion_superior fe
+JOIN dim_ubicacion du ON fe.sk_ubicacion = du.sk_ubicacion
+GROUP BY du.departamento
+HAVING SUM(fe.total_matriculados) > 0
+ORDER BY total_matriculados DESC
+LIMIT 10;
+
+
+-- ------------------------------------------------------------------------------
+-- 2.3. Brecha de Genero por Nivel de Formacion (Pregrado vs Posgrado)
+-- Visualizacion: Barras agrupadas (Mujeres vs Hombres por nivel).
+-- ------------------------------------------------------------------------------
+SELECT
+    dnf.nivel_formacion,
+    dnf.tipo_formacion,
+    SUM(CASE WHEN dd.id_genero = 2 THEN fe.total_matriculados ELSE 0 END) AS total_mujeres,
+    SUM(CASE WHEN dd.id_genero = 1 THEN fe.total_matriculados ELSE 0 END) AS total_hombres,
+    ROUND(
+        SUM(CASE WHEN dd.id_genero = 2 THEN fe.total_matriculados ELSE 0 END) * 100.0 /
+        NULLIF(SUM(fe.total_matriculados), 0),
+        2
+    ) AS porcentaje_mujeres
+FROM fact_educacion_superior fe
+JOIN dim_nivel_formacion dnf ON fe.sk_nivel_formacion = dnf.sk_nivel_formacion
+JOIN dim_demografia dd ON fe.sk_demografia = dd.sk_demografia
+WHERE dnf.nivel_formacion NOT IN ('exterior', 'desconocido')
+GROUP BY dnf.nivel_formacion, dnf.tipo_formacion
+ORDER BY dnf.tipo_formacion, total_mujeres DESC;
+
+
+-- ==============================================================================
+-- SECCION 3: CONSULTAS SOBRE LA VISTA AUXILIAR (GRANULARIDAD FINA)
+-- Requieren que la vista vw_matriculas_detalle haya sido creada ejecutando
+-- sql/vw_matriculas_detalle.sql manualmente.
+-- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 3.1. Paridad de Genero por Nucleo Basico de Conocimiento (Top 20)
+-- Visualizacion: Barras divergentes.
+-- ------------------------------------------------------------------------------
+SELECT
+    UPPER(v.nucleo_basico) AS campo_de_estudio,
+    SUM(CASE WHEN v.id_genero = 2 THEN v.total_matriculados ELSE 0 END) AS total_mujeres,
+    SUM(CASE WHEN v.id_genero = 1 THEN v.total_matriculados ELSE 0 END) AS total_hombres,
+    ROUND(
+        (SUM(CASE WHEN v.id_genero = 2 THEN v.total_matriculados ELSE 0 END) /
+         NULLIF(SUM(CASE WHEN v.id_genero = 1 THEN v.total_matriculados ELSE 0 END), 0)) * 100,
+        2
+    ) AS indice_paridad
+FROM vw_matriculas_detalle v
+WHERE v.nucleo_basico IS NOT NULL
+GROUP BY v.nucleo_basico
+ORDER BY (total_mujeres + total_hombres) DESC
 LIMIT 20;
 
 
 -- ------------------------------------------------------------------------------
--- 3. TENDENCIA: Crecimiento Histórico de Matrículas por Sector (Público vs Privado)
--- Propósito: Monitorear si el estado está asumiendo la carga de la expansión educativa.
--- Visualización Sugerida: Gráfico de Líneas con dos series (Público y Privado).
+-- 3.2. Tipos de Formacion: Grandes Ejes vs Otras Regiones
+-- Visualizacion: Barras apiladas por zona.
 -- ------------------------------------------------------------------------------
-SELECT 
-    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
-    CASE di.sector
-        WHEN '1' THEN 'OFICIAL'
-        WHEN '2' THEN 'PRIVADA'
-        ELSE 'OTRO'
-    END AS sector,
-    SUM(fm.total_matriculados) AS total_matriculados
-FROM fact_matriculas fm
-INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
-INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
-GROUP BY dt.anio, di.sector
-ORDER BY dt.anio ASC, di.sector ASC;
-
-
--- ------------------------------------------------------------------------------
--- 4. ANÁLISIS: Tipos de Formación en la "Periferia" vs "Capitales"
--- Propósito: Descubrir si a las regiones alejadas solo llegan carreras técnicas
---            mientras que las universitarias se quedan en las capitales.
--- Visualización Sugerida: Gráfico de Columnas Agrupadas.
--- ------------------------------------------------------------------------------
-SELECT 
-    CASE 
-        WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
-        ELSE 'Regiones Periféricas' 
+SELECT
+    CASE
+        WHEN v.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico', 'santander')
+        THEN 'Grandes Ejes'
+        ELSE 'Otras Regiones'
     END AS zona_geografica,
-    CASE dp.nivel_formacion
-        WHEN '1' THEN 'ESPECIALIZACIÓN'
-        WHEN '2' THEN 'MAESTRÍA'
-        WHEN '3' THEN 'DOCTORADO'
-        WHEN '4' THEN 'TÉCNICA PROFESIONAL'
-        WHEN '5' THEN 'TECNOLÓGICA'
-        WHEN '6' THEN 'UNIVERSITARIA'
-        WHEN '7' THEN 'ESPECIALIZACIÓN TÉCNICA'
-        WHEN '8' THEN 'ESPECIALIZACIÓN TECNOLÓGICA'
-        WHEN '10' THEN 'ESPECIALIDAD MÉDICO QUIRÚRGICA'
-        ELSE 'OTRO'
-    END AS nivel_de_formacion,
-    SUM(fm.total_matriculados) AS volumen_matriculas
-FROM fact_matriculas fm
-INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
-INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
-GROUP BY 
-    CASE 
-        WHEN du.departamento IN ('bogota', 'antioquia', 'valle del cauca', 'atlantico') THEN 'Grandes Ejes'
-        ELSE 'Regiones Periféricas' 
-    END, 
-    dp.nivel_formacion
-ORDER BY zona_geografica ASC, SUM(fm.total_matriculados) DESC;
+    UPPER(v.nivel_formacion) AS nivel_de_formacion,
+    SUM(v.total_matriculados) AS volumen_matriculas
+FROM vw_matriculas_detalle v
+GROUP BY zona_geografica, v.nivel_formacion
+ORDER BY zona_geografica, volumen_matriculas DESC;
 
 
 -- ------------------------------------------------------------------------------
--- 5. IMPACTO: Expansión de la Metodología Virtual y a Distancia a través de los años
--- Propósito: Evaluar si la virtualidad está siendo el motor para democratizar el acceso.
--- Visualización Sugerida: Gráfico de Áreas Apiladas (Stacked Area Chart).
+-- 3.3. Top 10 Instituciones Publicas por Matricula Universitaria
+-- Visualizacion: Tabla / Barras.
 -- ------------------------------------------------------------------------------
-SELECT 
-    STR_TO_DATE(CONCAT(dt.anio, '-01-01'), '%Y-%m-%d') AS fecha_anio,
-    CASE dp.metodologia
-        WHEN '1' THEN 'PRESENCIAL'
-        WHEN '2' THEN 'A DISTANCIA (TRADICIONAL)'
-        WHEN '3' THEN 'VIRTUAL'
-        WHEN '4' THEN 'A DISTANCIA (VIRTUAL)'
-        WHEN '5' THEN 'DUAL'
-        WHEN '7' THEN 'PRESENCIAL - VIRTUAL'
-        WHEN '9' THEN 'PRESENCIAL - A DISTANCIA'
-        ELSE 'OTRA'
-    END AS metodologia,
-    SUM(fm.total_matriculados) AS total_estudiantes
-FROM fact_matriculas fm
-INNER JOIN dim_tiempo dt ON fm.sk_tiempo = dt.sk_tiempo
-INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
-GROUP BY dt.anio, dp.metodologia
-ORDER BY dt.anio ASC, SUM(fm.total_matriculados) DESC;
-
-
--- ------------------------------------------------------------------------------
--- 6. TOP 10: Instituciones Públicas con Mayor Impacto en el Nivel Universitario
--- Propósito: Identificar las universidades públicas que más sostienen la demanda 
---            del país para posible asignación de presupuestos.
--- Visualización Sugerida: Tabla Dinámica o Gráfico de Barras Horizontales.
--- ------------------------------------------------------------------------------
-SELECT 
-    UPPER(di.nombre_ies) AS nombre_institucion,
-    UPPER(du.departamento) AS departamento_principal,
-    SUM(fm.total_matriculados) AS total_matriculas_universitarias
-FROM fact_matriculas fm
-INNER JOIN dim_institucion di ON fm.sk_institucion = di.sk_institucion
-INNER JOIN dim_programa dp ON fm.sk_programa = dp.sk_programa
-INNER JOIN dim_ubicacion du ON fm.sk_ubicacion = du.sk_ubicacion
-WHERE di.sector = '1' -- Instituciones Públicas
-    AND dp.nivel_formacion = '6' -- Solo programas profesionales/universitarios
-GROUP BY di.nombre_ies, du.departamento
-ORDER BY SUM(fm.total_matriculados) DESC
+SELECT
+    UPPER(v.nombre_ies) AS nombre_institucion,
+    UPPER(v.departamento) AS departamento_principal,
+    SUM(v.total_matriculados) AS total_matriculas_universitarias
+FROM vw_matriculas_detalle v
+WHERE v.sector_ies = 'oficial'
+  AND v.nivel_formacion = 'universitaria'
+GROUP BY v.nombre_ies, v.departamento
+ORDER BY total_matriculas_universitarias DESC
 LIMIT 10;
