@@ -1,9 +1,59 @@
 import pandas as pd
 import requests
 import time
+from pathlib import Path
 from typing import List, Dict, Any
 
-from config import SOCRATA_ENDPOINT, SOCRATA_APP_TOKEN
+from config import SOCRATA_ENDPOINT, SOCRATA_APP_TOKEN, PRIMARY_CSV, PRIMARY_CSV_GDRIVE_ID
+
+
+def ensure_primary_csv(destination: Path = PRIMARY_CSV, gdrive_id: str = PRIMARY_CSV_GDRIVE_ID) -> Path:
+    """
+    Garantiza que el CSV primario exista localmente; si falta, lo descarga desde Google Drive.
+
+    El dataset no se versiona en el repo: se descarga bajo demanda desde un archivo de Drive
+    compartido como "Cualquiera con el enlace". La descarga es idempotente (si el archivo ya
+    existe, no se vuelve a bajar).
+
+    Args:
+        destination (Path): Ruta local donde debe quedar el CSV.
+        gdrive_id (str): ID del archivo en Google Drive.
+
+    Returns:
+        Path: La ruta local del CSV asegurado.
+
+    Raises:
+        RuntimeError: Si no hay ID configurado o la descarga falla.
+    """
+    if destination.exists():
+        print(f"Dataset primario ya presente: {destination}")
+        return destination
+
+    if not gdrive_id:
+        raise RuntimeError(
+            "El dataset primario no existe y no hay 'PRIMARY_CSV_GDRIVE_ID' configurado. "
+            "Define la variable en 'airflow/.env' o coloca el CSV manualmente en "
+            f"{destination}."
+        )
+
+    # gdown maneja la confirmación de antivirus de Drive para archivos grandes
+    import gdown
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Dataset primario no encontrado. Descargando desde Google Drive (id={gdrive_id})...")
+    try:
+        gdown.download(id=gdrive_id, output=str(destination), quiet=False)
+    except Exception as e:
+        raise RuntimeError(f"Falló la descarga del dataset desde Google Drive: {e}")
+
+    if not destination.exists():
+        raise RuntimeError(
+            "La descarga finalizó pero el archivo no se encontró. Verifica que el enlace de "
+            "Drive esté compartido como 'Cualquiera con el enlace'."
+        )
+    print(f"Descarga completada: {destination}")
+    return destination
+
 
 def extract_data(file_path: str) -> pd.DataFrame:
     """
