@@ -146,7 +146,7 @@ def verify_load(engine: Engine):
     tables = [
         'dim_tiempo', 'dim_ubicacion', 'dim_demografia',
         'dim_nivel_formacion', 'dim_sector_ies', 'dim_estrato',
-        'fact_educacion_superior', 'legacy_matriculas_detalle'
+        'fact_educacion_superior'
     ]
 
     with engine.connect() as conn:
