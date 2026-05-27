@@ -131,7 +131,7 @@ El grano de la primera entrega (IES × Programa × Municipio) es incompatible co
 
 Sacrificio documentado: se pierde la granularidad de IES, Programa, Municipio, Metodología y Área del primario a nivel del star schema. Esta reducción fue necesaria para habilitar la integración con ICETEX y enfocar el análisis en las preguntas de equidad y cobertura que motivan el proyecto.
 
-![Modelo dimensional — Star Schema](diagrams/star_schemma_dw_matriculas_colV2.png)
+![Modelo dimensional — Star Schema](diagrams/star_schemma_dw_matriculas_colV3.png)
 
 ### 4.2. Tabla de Hechos: `fact_educacion_superior`
 
