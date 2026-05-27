@@ -45,4 +45,5 @@ Thumbs.db
 !airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv
 
 !airflow/docker-compose.yaml
+!kafka/docker-compose.kafka.yaml
 *.yaml
