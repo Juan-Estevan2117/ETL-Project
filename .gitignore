@@ -43,3 +43,6 @@ Thumbs.db
 
 !airflow/data/raw/descripcion_dataset_api.txt
 !airflow/data/raw/educacionCol_descripcion_columnas_dataset.csv
+
+!airflow/docker-compose.yaml
+*.yaml
