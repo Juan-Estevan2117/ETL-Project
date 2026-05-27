@@ -4,3 +4,5 @@ PyMySQL
 python-dotenv
 requests
 great-expectations
+kafka-python
+gdown
