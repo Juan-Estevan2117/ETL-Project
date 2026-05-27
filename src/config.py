@@ -31,6 +31,10 @@ STAGING_DIR.mkdir(parents=True, exist_ok=True)
 # --- Archivos de datos ---
 PRIMARY_CSV: Path = RAW_DIR / "educacionCol.csv"
 
+# ID del archivo en Google Drive ("Cualquiera con el enlace") para auto-descargar
+# el CSV primario si no está presente. Así no se versiona el dataset en el repo.
+PRIMARY_CSV_GDRIVE_ID = os.getenv("PRIMARY_CSV_GDRIVE_ID", "15o5NuExauHCOE_PQSerAG5WHNilwnxuc")
+
 
 # --- Configuración de la Base de Datos ---
 MYSQL_USER = os.getenv("MYSQL_USER")
@@ -47,6 +51,16 @@ MYSQL_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_
 SOCRATA_ENDPOINT = "https://www.datos.gov.co/resource/26bn-e42j.json"
 # Token opcional para evitar throttling (límites de tasa de peticiones)
 SOCRATA_APP_TOKEN = os.getenv("SOCRATA_APP_TOKEN", None)
+
+
+# --- Configuración del Streaming Kafka (Entrega Final) ---
+# Broker levantado por kafka/docker-compose.kafka.yaml (modo KRaft).
+# Los scripts producer/consumer corren en el host y conectan a localhost:9092.
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+# Topic donde se publican las métricas derivadas de la fact table.
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "dw-metrics-stream")
+# Segundos entre cada re-consulta y re-publicación de métricas del producer.
+STREAM_DELAY_SECONDS = float(os.getenv("STREAM_DELAY_SECONDS", "5"))
 
 
 # Validación rápida para asegurar que las variables esenciales están cargadas
