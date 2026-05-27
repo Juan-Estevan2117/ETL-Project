@@ -1,5 +1,10 @@
 # Observatorio de Acceso y Financiación a la Educación Superior (ODS 4)
-**Proyecto ETL — Segunda Entrega | Ingeniería de Datos e Inteligencia Artificial**
+**Proyecto ETL — Entrega Final | Ingeniería de Datos e Inteligencia Artificial**
+
+> La entrega final integra todo lo construido en las dos primeras entregas (pipeline batch
+> con Airflow, Data Warehouse dimensional en MySQL, validación con Great Expectations y
+> dashboard estático en Looker Studio) y **añade un componente de streaming con Apache Kafka**
+> que publica métricas derivadas de la *fact table* y las monitorea/persiste en tiempo real.
 
 ---
 
@@ -16,6 +21,10 @@
 9. [Estructura del Proyecto](#9-estructura-del-proyecto)
 10. [Instrucciones de Ejecución](#10-instrucciones-de-ejecución-local)
 11. [Diseño del DAG de Airflow](#11-diseño-del-dag-de-airflow)
+12. [Componente de Streaming con Apache Kafka](#12-componente-de-streaming-con-apache-kafka)
+13. [Monitoreo en Tiempo Real e Interpretación](#13-monitoreo-en-tiempo-real-e-interpretación)
+14. [Business Objectives Achievement](#14-business-objectives-achievement)
+15. [Supuestos, Limitaciones y Mejoras Futuras](#15-supuestos-limitaciones-y-mejoras-futuras)
 
 ---
 
@@ -96,6 +105,18 @@ Realizado en la Fase 0 (notebook `notebooks/eda.ipynb`). Hallazgos que impactan 
 | `ESTRATO ∈ {1..6}` sin outliers, sin nulos | Puede integrarse directamente | Cast a int, sin imputación |
 | Rango de años: 2015–2025 | 4 años extra vs primario (2015–2021) | Expectation GX ajustada a 2015–2025 |
 
+#### Re-perfilado en la entrega final (refresh de la API ICETEX)
+
+Al re-extraer la API para la entrega final, el dataset trae más vigencias y aparecen **variantes de `nivel_formacion` que el mapeo original (basado en claves exactas con tildes) no cubría**, lo que hacía fallar la expectativa crítica `ExpectColumnValuesToBeInSet` sobre `nivel_formacion` y abortaba el pipeline. Hallazgos y solución:
+
+| Valor nuevo encontrado | Causa | Impacto | Solución en `clean_icetex` |
+|---|---|---|---|
+| `Especialización médico quirurgica` (~2,063 filas) | La API escribe `quirurgica` **sin tilde**; la clave del mapa la tenía con tilde → no coincidía | Quedaba sin homologar → fuera del set canónico | Se **normaliza con `clean_text` antes de mapear** (las tildes dejan de importar) → `especializacion` |
+| `Formació técnica profesional` (1 fila) | Nombre **truncado** por la API (falta la `n` de "Formación") | No coincidía con la clave exacta | Clave explícita para la variante truncada → `tecnica profesional` |
+| `Educación continuada` (~143 filas) | Modalidad de formación continua, no es un nivel académico del DW | Sin equivalente canónico | **Descartado** (mismo criterio que `Normalista`); se reporta el conteo en logs |
+
+**Cambio de diseño aplicado:** el mapeo de `nivel_formacion` en `clean_icetex` pasó de `.replace()` con claves exactas a `clean_text()` + `.map()` con **claves normalizadas** (minúsculas, sin tildes ni puntuación). Las filas cuyo nivel no tiene equivalente canónico se descartan explícitamente. Esto hace la homologación **robusta ante refreshes futuros de la API** (variaciones de tildes/casing) y restaura el paso de la validación crítica.
+
 **Convención de casing:** todos los valores de dominio (`nivel_formacion`, `sector_ies`) se almacenan en **minúsculas** en todo el pipeline (transform → fact table → queries BI).
 
 ---
@@ -108,9 +129,7 @@ El grano de la primera entrega (IES × Programa × Municipio) es incompatible co
 
 > Un registro por `(anio, semestre, departamento, nivel_formacion, sector_ies, genero, estrato)`
 
-Sacrificio documentado: se pierde la granularidad de IES, Programa, Municipio, Metodología y Área del primario a nivel del star schema. Esta reducción fue necesaria para habilitar la integración con ICETEX y enfocar el análisis en las preguntas de equidad y cobertura que motivan la segunda entrega.
-
-Como mitigación, el pipeline también carga la tabla `legacy_matriculas_detalle` y crea la vista `vw_matriculas_detalle`, que preserva la granularidad fina del SNIES (IES, Programa, Municipio, Núcleo Básico, Metodología, Área). **Esta vista se implementó pero no se utilizó en las consultas finales del dashboard**, que se enfocan exclusivamente en el modelo dimensional integrado. Queda disponible como activo para análisis ad hoc que requieran el detalle original.
+Sacrificio documentado: se pierde la granularidad de IES, Programa, Municipio, Metodología y Área del primario a nivel del star schema. Esta reducción fue necesaria para habilitar la integración con ICETEX y enfocar el análisis en las preguntas de equidad y cobertura que motivan el proyecto.
 
 ![Modelo dimensional — Star Schema](diagrams/star_schemma_dw_matriculas_colV2.png)
 
@@ -218,7 +237,7 @@ La suite `fact_educacion_superior_suite` se ejecuta sobre el DataFrame integrado
 
 ## 8. Consultas BI y Dashboard
 
-Las queries que alimentan el dashboard están en `sql/bi_queries.sql` y se agrupan en dos bloques que corresponden uno a uno con los gráficos publicados en Looker Studio. La sección 3 del archivo SQL (consultas sobre `vw_matriculas_detalle`) no se utilizó en el dashboard final.
+Las queries que alimentan el dashboard están en `sql/bi_queries.sql` y se agrupan en dos bloques que corresponden uno a uno con los gráficos publicados en Looker Studio.
 
 ### 8.1. Consultas de Integración (SNIES + ICETEX)
 
@@ -302,10 +321,13 @@ project_delivery_2/
 │   ├── integrate.py                                # FULL OUTER JOIN de ambas fuentes
 │   ├── load.py                                     # 6 dims + fact con dict-mapping anti-OOM
 │   └── validate.py                                 # runner Great Expectations
+├── kafka/                                          # componente de streaming (entrega final)
+│   ├── docker-compose.kafka.yaml                   # broker Kafka KRaft (sin Zookeeper), puerto 9092
+│   ├── producer_metrics.py                         # lee fact table → publica métricas al topic (bucle)
+│   └── consumer_metrics.py                         # consume topic → consola + stream_metrics_log
 ├── sql/
-│   ├── init_dw_matriculas_col.sql                  # DDL: 6 dims + fact
+│   ├── init_dw_matriculas_col.sql                  # DDL: 6 dims + fact + stream_metrics_log
 │   ├── bi_queries.sql                              # queries analíticas del dashboard
-│   ├── vw_matriculas_detalle.sql                   # vista auxiliar (implementada, no usada en dashboard)
 │   ├── workbench_diagram.mwb                       # modelo MySQL Workbench
 │   └── workbench_diagram.mwb.bak
 ├── gx/                                             # Great Expectations (auto-generado, gitignored)
@@ -346,7 +368,9 @@ project_delivery_2/
 
 - Python 3.12+
 - Docker y Docker Compose (para MySQL)
-- Dataset SNIES (`educacionCol.csv`) en `airflow/data/raw/`
+- El dataset SNIES **no se versiona**: el pipeline lo **descarga automáticamente** desde Google
+  Drive (variable `PRIMARY_CSV_GDRIVE_ID` en `airflow/.env`) hacia `airflow/data/raw/educacionCol.csv`
+  si no existe. La descarga es idempotente (solo ocurre la primera vez). Requiere conexión a internet.
 
 ### Paso 1 — Entorno virtual e instalación de dependencias
 
@@ -464,3 +488,194 @@ docker compose exec airflow-scheduler airflow dags test etl_ods4 2026-04-17
 ```
 
 Los logs se encuentran en `airflow/logs/` y los Data Docs de GX en `gx/uncommitted/data_docs/local_site/`.
+
+---
+
+## 12. Componente de Streaming con Apache Kafka
+
+La entrega final añade un componente de streaming que **publica métricas derivadas de la tabla de
+hechos** (`fact_educacion_superior`) a un topic de Kafka y las consume en tiempo real. Es el único
+componente nuevo respecto a la segunda entrega; el pipeline batch, el modelo dimensional, la
+validación y el dashboard se conservan sin cambios.
+
+> **Requisito clave del enunciado:** el producer lee métricas **derivadas del Data Warehouse**, no
+> del CSV original. La fuente del stream es siempre la fact table en MySQL.
+
+### 12.1. Arquitectura del streaming
+
+```
+fact_educacion_superior (MySQL DW)
+        │  (consulta SQL agregada, reutiliza la lógica de sql/bi_queries.sql)
+        ▼
+kafka/producer_metrics.py  ──►  Topic Kafka 'dw-metrics-stream'  ──►  kafka/consumer_metrics.py
+        (bucle cada N s)                                                 │
+                                                                         ├─► Monitoreo en consola (tiempo real)
+                                                                         └─► Persistencia en stream_metrics_log (MySQL)
+```
+
+- **Broker:** un único contenedor Kafka en **modo KRaft (sin Zookeeper)**, definido en
+  `kafka/docker-compose.kafka.yaml`, aislado del stack de Airflow. Expone `localhost:9092`.
+- **Producer (`kafka/producer_metrics.py`):** consulta la fact table cada `STREAM_DELAY_SECONDS`,
+  construye eventos JSON y los publica al topic en bucle (Ctrl+C para detener). Reutiliza
+  `MYSQL_URL` y las constantes Kafka de `src/config.py`.
+- **Consumer (`kafka/consumer_metrics.py`):** se suscribe al topic, **muestra** cada métrica en
+  consola y la **persiste** en la tabla `stream_metrics_log`.
+
+### 12.2. Métricas seleccionadas (≥3, derivadas de la fact table)
+
+Las tres métricas son significativas para el monitoreo del proceso de negocio (equidad y cobertura
+del crédito educativo) y reutilizan la lógica analítica de `sql/bi_queries.sql`:
+
+| Métrica (`metric_name`) | Dimensión | Cálculo sobre la fact table | Significado de negocio |
+|---|---|---|---|
+| `tasa_cobertura_credito` | `departamento` (`dim_ubicacion`) | `SUM(beneficiarios)/NULLIF(SUM(matriculados),0)*100` | Penetración del crédito ICETEX frente a la matrícula; detecta "desiertos de financiación". |
+| `beneficiarios_por_estrato` | `estrato` (`dim_estrato`, excluye estrato 0) | `SUM(nuevos_beneficiarios_credito)` | Equidad: a qué estratos llega la financiación. |
+| `matriculados_por_sector` + `beneficiarios_por_sector` | `sector_ies` (`dim_sector_ies`, excluye `desconocido`) | `SUM(total_matriculados)` y `SUM(nuevos_beneficiarios_credito)` | Orientación de matrícula y crédito hacia IES oficiales vs privadas. |
+
+### 12.3. Formato del evento (JSON)
+
+Todos los eventos comparten un esquema común para que el consumer los procese de forma uniforme:
+
+```json
+{
+  "metric_name": "tasa_cobertura_credito",
+  "dimension_key": "departamento",
+  "dimension_value": "ANTIOQUIA",
+  "metric_value": 12.34,
+  "event_timestamp": "2026-05-27T15:04:05.123456+00:00"
+}
+```
+
+### 12.4. Tabla de persistencia `stream_metrics_log`
+
+El consumer persiste cada evento en esta tabla (creada por el DDL,
+`sql/init_dw_matriculas_col.sql`, de forma idempotente):
+
+| Columna | Descripción |
+|---|---|
+| `id` | PK autoincremental |
+| `metric_name`, `dimension_key`, `dimension_value`, `metric_value` | Contenido del evento |
+| `event_timestamp` | Timestamp asignado por el producer al publicar |
+| `kafka_offset`, `kafka_partition` | Trazabilidad del mensaje en Kafka |
+| `received_at` | Momento de persistencia en el consumer |
+
+### 12.5. Cómo correr el producer y el consumer
+
+**Prerrequisito:** el Data Warehouse debe estar poblado (haber ejecutado el pipeline batch,
+`python3 src/main.py`, o el DAG de Airflow).
+
+```bash
+# 1. Levantar el broker Kafka (modo KRaft, contenedor único)
+docker compose -f kafka/docker-compose.kafka.yaml up -d
+
+# (opcional) verificar que el broker responde
+docker exec etl_kafka kafka-topics --bootstrap-server localhost:9092 --list
+
+# 2. Terminal A — consumer (se queda escuchando y monitoreando)
+python3 kafka/consumer_metrics.py
+
+# 3. Terminal B — producer (publica métricas en bucle; Ctrl+C para detener)
+python3 kafka/producer_metrics.py
+```
+
+Si el DW está en el contenedor Docker, asegúrate de que `airflow/.env` apunte a `MYSQL_HOST=127.0.0.1`
+y `MYSQL_PORT=3307`, igual que para el pipeline local.
+
+Para detener Kafka: `docker compose -f kafka/docker-compose.kafka.yaml down` (añade `-v` para borrar
+también el volumen del broker).
+
+---
+
+## 13. Monitoreo en Tiempo Real e Interpretación
+
+Con el producer y el consumer en ejecución, el consumer imprime una línea por cada métrica recibida:
+
+```
+📥 [offset=0] metric=tasa_cobertura_credito departamento=ANTIOQUIA value=12.34
+📥 [offset=1] metric=beneficiarios_por_estrato estrato=Estrato 2 value=18450.0
+📥 [offset=2] metric=matriculados_por_sector sector_ies=oficial value=9876543.0
+📥 [offset=3] metric=beneficiarios_por_sector sector_ies=oficial value=120345.0
+```
+
+En paralelo, cada evento queda persistido en `stream_metrics_log`, lo que permite consultar el
+histórico del monitoreo:
+
+```sql
+USE dw_matriculas_col;
+-- Cuántos eventos se han monitoreado por métrica
+SELECT metric_name, COUNT(*) AS eventos
+FROM stream_metrics_log
+GROUP BY metric_name;
+
+-- Última lectura de cobertura por departamento
+SELECT dimension_value AS departamento, metric_value AS cobertura_pct, received_at
+FROM stream_metrics_log
+WHERE metric_name = 'tasa_cobertura_credito'
+ORDER BY received_at DESC, metric_value DESC
+LIMIT 10;
+```
+
+**Interpretación:** la salida en tiempo real funciona como un panel de monitoreo del indicador de
+equidad del sistema. Un operador puede vigilar, ciclo a ciclo, qué departamentos mantienen baja
+cobertura de crédito (desiertos de financiación), cómo se distribuyen los beneficiarios por estrato
+y si la financiación se concentra en IES oficiales o privadas — las mismas preguntas de negocio que
+motivan el proyecto, ahora observables de forma continua.
+
+---
+
+## 14. Business Objectives Achievement
+
+El objetivo de negocio central es **medir la equidad y cobertura de la financiación estatal (ICETEX)
+frente a la oferta educativa (SNIES)** para evaluar la efectividad de las políticas de crédito
+respecto al ODS 4. Cada KPI, componente del dashboard y métrica de streaming se vincula a una
+pregunta analítica y a una decisión que habilita.
+
+| Objetivo de negocio | Pregunta analítica | KPI / Métrica | Evidencia (Dashboard / Streaming) | Decisión que soporta |
+|---|---|---|---|---|
+| Detectar desiertos de financiación | ¿Dónde hay alta matrícula pero baja cobertura de crédito? | `tasa_cobertura_credito` por depto. | Mapa coroplético (Query 1.1) **+ stream `tasa_cobertura_credito`** | Priorizar regiones para ampliar oferta de crédito ICETEX. |
+| Evaluar equidad socioeconómica | ¿La financiación llega equitativamente a todos los estratos? | `beneficiarios_por_estrato` | Barras por estrato (Query 1.2) **+ stream `beneficiarios_por_estrato`** | Ajustar focalización del crédito hacia estratos bajos. |
+| Analizar orientación público/privado | ¿El crédito se dirige más a IES oficiales o privadas? | matriculados vs beneficiarios por sector | Tendencia por sector (Query 1.3) **+ stream `*_por_sector`** | Revisar convenios con IES según sector. |
+| Caracterizar la oferta educativa | ¿Cómo evoluciona la matrícula por nivel y territorio? | matrícula por nivel / Top 10 deptos. | Queries 2.1, 2.2 (Looker) | Planeación de cobertura educativa. |
+| Medir brecha de género | ¿Qué brecha existe por nivel de formación? | `porcentaje_mujeres` por nivel | Query 2.3 (Looker) | Programas de equidad de género. |
+
+**Cómo cada capa soporta el negocio:**
+- **Pipeline ETL (Airflow):** automatiza y hace reproducible la integración SNIES + ICETEX.
+- **Validación (Great Expectations):** garantiza que las métricas de equidad se calculen sobre datos
+  confiables (sin nulos en llaves, rangos válidos, grano único).
+- **Modelo dimensional:** el grano común habilita cruzar matrícula y crédito en una sola fact table.
+- **Dashboard (Looker Studio):** entrega los KPIs e insights estáticos para decisión estratégica.
+- **Streaming (Kafka):** convierte esos mismos indicadores en un monitoreo continuo del proceso.
+
+---
+
+## 15. Supuestos, Limitaciones y Mejoras Futuras
+
+### Supuestos y decisiones técnicas documentadas
+
+- **Kafka en modo KRaft (sin Zookeeper):** aunque en ejercicios previos usamos Zookeeper, aquí se
+  despliega Kafka en modo KRaft. Justificación: Zookeeper está **deprecado desde Kafka 3.5 y
+  eliminado en Kafka 4.0**; para un broker único de uso local no aporta coordinación útil y solo
+  agrega un contenedor extra. El enunciado exige Apache Kafka, no Zookeeper.
+- **`docker-compose` separado para Kafka:** se aísla del stack de Airflow para no afectar el pipeline
+  batch existente (red y ciclo de vida independientes).
+- **Continuidad simulada por re-consulta en bucle:** la fact table es estática; la "publicación
+  continua" exigida se emula re-consultando y re-publicando las métricas cada `STREAM_DELAY_SECONDS`.
+- **Proxy de departamento (heredado de la 2ª entrega):** `dim_ubicacion` mezcla departamento de
+  oferta (SNIES) y de origen (ICETEX); las métricas streameadas heredan este supuesto.
+- **Consumer con `group_id` fijo y `auto_offset_reset=earliest`:** al reconectar reproduce el
+  histórico del topic, evitando perder mensajes en desarrollo.
+
+### Limitaciones
+
+- El stream refleja un DW estático: no hay novedad real entre ciclos salvo que se recargue el DW.
+- Broker de un solo nodo (factor de replicación 1): sin tolerancia a fallos, adecuado solo para
+  desarrollo/demostración.
+- El grano departamental sacrifica el detalle de IES/programa/municipio en el modelo integrado.
+
+### Mejoras futuras
+
+- Alimentar el stream desde un proceso incremental real (CDC sobre la fact table) en lugar de
+  re-consulta periódica.
+- Cluster Kafka multi-broker con replicación para alta disponibilidad.
+- Conectar `stream_metrics_log` a un panel en vivo (p. ej. Grafana) para visualizar la serie temporal
+  del monitoreo.
