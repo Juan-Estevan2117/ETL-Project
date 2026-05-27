@@ -183,7 +183,7 @@ Se asume que, a nivel agregado, estos son intercambiables para análisis estrat�
 
 ## 6. Explicación del Pipeline ETL
 
-![Arquitectura del pipeline ETL](diagrams/architecture_diagramV2.svg)
+![Arquitectura del pipeline ETL](diagrams/architecture_diagramV3.svg)
 
 ### Módulos del pipeline
 
