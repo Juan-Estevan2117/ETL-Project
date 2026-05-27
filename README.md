@@ -503,15 +503,7 @@ validación y el dashboard se conservan sin cambios.
 
 ### 12.1. Arquitectura del streaming
 
-```
-fact_educacion_superior (MySQL DW)
-        │  (consulta SQL agregada, reutiliza la lógica de sql/bi_queries.sql)
-        ▼
-kafka/producer_metrics.py  ──►  Topic Kafka 'dw-metrics-stream'  ──►  kafka/consumer_metrics.py
-        (bucle cada N s)                                                 │
-                                                                         ├─► Monitoreo en consola (tiempo real)
-                                                                         └─► Persistencia en stream_metrics_log (MySQL)
-```
+![Arquitectura del Streaming](diagrams/streaming_architecture.svg)
 
 - **Broker:** un único contenedor Kafka en **modo KRaft (sin Zookeeper)**, definido en
   `kafka/docker-compose.kafka.yaml`, aislado del stack de Airflow. Expone `localhost:9092`.
