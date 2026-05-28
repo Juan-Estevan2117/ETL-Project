@@ -324,7 +324,8 @@ project_delivery_2/
 ├── kafka/                                          # componente de streaming (entrega final)
 │   ├── docker-compose.kafka.yaml                   # broker Kafka KRaft (sin Zookeeper), puerto 9092
 │   ├── producer_metrics.py                         # lee fact table → publica métricas al topic (bucle)
-│   └── consumer_metrics.py                         # consume topic → consola + stream_metrics_log
+│   ├── consumer_metrics.py                         # consume topic → consola + stream_metrics_log
+│   └── live_charts.py                              # panel matplotlib en vivo sobre stream_metrics_log (demo)
 ├── sql/
 │   ├── init_dw_matriculas_col.sql                  # DDL: 6 dims + fact + stream_metrics_log
 │   ├── bi_queries.sql                              # queries analíticas del dashboard
@@ -612,6 +613,32 @@ equidad del sistema. Un operador puede vigilar, ciclo a ciclo, qué departamento
 cobertura de crédito (desiertos de financiación), cómo se distribuyen los beneficiarios por estrato
 y si la financiación se concentra en IES oficiales o privadas — las mismas preguntas de negocio que
 motivan el proyecto, ahora observables de forma continua.
+
+### 13.1. Panel de gráficas en vivo (`kafka/live_charts.py`)
+
+Para visualizar el monitoreo de forma gráfica (no solo en consola) se incluye `kafka/live_charts.py`,
+un panel opcional construido con **matplotlib** que **re-consulta `stream_metrics_log` cada 3 segundos**
+(vía `FuncAnimation`) y se redibuja solo mientras corren el producer y el consumer. Muestra dos gráficas:
+
+| Gráfica | Consulta | Tipo | Qué evidencia |
+|---|---|---|---|
+| **Pulso del stream** | `COUNT(*)` por segundo sobre `received_at` (últimos 2 min) | Línea/área | *Liveness*: se mueve en cada ciclo → el flujo está activo |
+| **Cobertura por departamento** | última lectura (`MAX(received_at)`) de `tasa_cobertura_credito`, Top 10 | Barras horizontales | Snapshot de negocio más reciente |
+
+> **Nota de diseño:** como el Data Warehouse es estático, los *valores* de negocio no cambian entre
+> ciclos (la gráfica de cobertura se mantiene estable); lo que cambia en tiempo real es la **ingesta**
+> (`received_at`, conteos), que la gráfica de pulso refleja. Esta distinción entre *flujo de datos* y
+> *estado del warehouse* es intencional y se explica en la sustentación.
+
+Requiere dependencias adicionales solo para la visualización (no para el pipeline):
+
+```bash
+pip install matplotlib PyQt5     # pandas ya está en requirements.txt
+python3 kafka/live_charts.py     # con producer + consumer corriendo y datos en stream_metrics_log
+```
+
+Detalle técnico: las consultas se envuelven en `text()` de SQLAlchemy para evitar que pandas/pymysql
+interpreten el `%` de `DATE_FORMAT('%H:%i:%s')` como un marcador de parámetro.
 
 ---
 
