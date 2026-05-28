@@ -13,9 +13,11 @@ STAGING_DIR = DATA_DIR / "staging"
 
 
 def _extract_primary():
-    from extract import extract_data
+    from extract import extract_data, ensure_primary_csv
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
-    df = extract_data(str(RAW_DIR / "educacionCol.csv"))
+    # Descarga el CSV desde Google Drive si no está presente (idempotente)
+    csv_path = ensure_primary_csv(RAW_DIR / "educacionCol.csv")
+    df = extract_data(str(csv_path))
     df.to_pickle(STAGING_DIR / "_stage_primary_raw.pkl")
 
 

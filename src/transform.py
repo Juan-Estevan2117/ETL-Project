@@ -138,15 +138,31 @@ def clean_icetex(df: pd.DataFrame) -> pd.DataFrame:
     df['id_genero'] = df['genero'].map({'Femenino': 2, 'Masculino': 1})
     df['sector_ies'] = df['sector_ies'].map({'OFICIAL': 'oficial', 'PRIVADO': 'privado', 'N/A': 'desconocido'})
 
-    # Homologación de Nivel de Formación (11 valores ICETEX → 7 canónicos, en minúsculas)
+    # Homologación de Nivel de Formación (ICETEX → 7 canónicos, en minúsculas).
+    # La API trae variantes con tildes inconsistentes y nombres truncados
+    # (p. ej. 'quirurgica' sin tilde, 'Formació' sin la 'n'), por lo que se
+    # normaliza con clean_text ANTES de mapear, usando claves ya normalizadas.
     nivel_map = {
-        'Formación técnica profesional': 'tecnica profesional', 'Tecnológico': 'tecnologica',
-        'Universitario': 'universitaria', 'Especialización universitaria': 'especializacion',
-        'Especialización médico quirúrgica': 'especializacion', 'Especialización tecnológica': 'especializacion',
-        'Especialización técnico profesional': 'especializacion', 'Maestría': 'maestria',
-        'Doctorado': 'doctorado', 'Exterior': 'exterior'
+        'formacion tecnica profesional': 'tecnica profesional',
+        'formacio tecnica profesional': 'tecnica profesional',   # variante truncada de la API
+        'tecnologico': 'tecnologica',
+        'universitario': 'universitaria',
+        'especializacion universitaria': 'especializacion',
+        'especializacion medico quirurgica': 'especializacion',
+        'especializacion tecnologica': 'especializacion',
+        'especializacion tecnico profesional': 'especializacion',
+        'maestria': 'maestria',
+        'doctorado': 'doctorado',
+        'exterior': 'exterior',
     }
-    df['nivel_formacion'] = df['nivel_formacion'].replace(nivel_map)
+    df['nivel_formacion'] = df['nivel_formacion'].apply(clean_text).map(nivel_map)
+
+    # Descartar niveles sin equivalente canónico en el modelo dimensional
+    # (p. ej. 'educacion continuada', 'normalista'): fuera del alcance del DW.
+    no_mapeados = int(df['nivel_formacion'].isna().sum())
+    if no_mapeados > 0:
+        print(f"   -> {no_mapeados} filas descartadas por nivel de formación fuera de alcance del DW.")
+        df = df.dropna(subset=['nivel_formacion'])
 
     # 5. Limpieza de texto y homologación geográfica
     # Las claves del geo_map deben ser POST-clean_text (sin comas, puntos ni tildes)
