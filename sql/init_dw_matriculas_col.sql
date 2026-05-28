@@ -153,29 +153,26 @@ INSERT INTO `dim_estrato` (`estrato`, `descripcion_estrato`) VALUES
 ON DUPLICATE KEY UPDATE `descripcion_estrato` = VALUES(`descripcion_estrato`);
 
 -- =====================================================================
--- TABLA DE STAGING PARA VISTA AUXILIAR
+-- TABLA DE STREAMING (ENTREGA FINAL)
 -- =====================================================================
-DROP TABLE IF EXISTS `legacy_matriculas_detalle`;
-CREATE TABLE `legacy_matriculas_detalle` (
-  `codigo_ies` INT,
-  `nombre_ies` VARCHAR(255),
-  `principal_seccional` VARCHAR(100),
-  `sector_ies` VARCHAR(100),
-  `caracter` VARCHAR(100),
-  `codigo_snies` INT,
-  `nombre_programa` VARCHAR(255),
-  `nivel_formacion` VARCHAR(150),
-  `metodologia` VARCHAR(100),
-  `area_conocimiento` VARCHAR(255),
-  `nucleo_basico` VARCHAR(255),
-  `codigo_municipio` INT,
-  `municipio` VARCHAR(150),
-  `codigo_departamento` INT,
-  `departamento` VARCHAR(150),
-  `id_genero` INT,
-  `anio` INT,
-  `semestre` INT,
-  `total_matriculados` INT
+-- Persiste las métricas derivadas de la fact table que el consumer de
+-- Kafka recibe del topic en tiempo real. Cada fila es un evento consumido.
+-- Es idempotente (CREATE TABLE IF NOT EXISTS): no se recrea si ya existe,
+-- por lo que se puede añadir a un DW ya inicializado sin perder datos.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `stream_metrics_log` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `metric_name` VARCHAR(80) NOT NULL,        -- métrica: tasa_cobertura_credito, beneficiarios_por_estrato, ...
+  `dimension_key` VARCHAR(80) NOT NULL,      -- dimensión analizada: departamento, estrato, sector_ies
+  `dimension_value` VARCHAR(120) NOT NULL,   -- valor concreto de la dimensión
+  `metric_value` DOUBLE NOT NULL,            -- valor numérico de la métrica
+  `event_timestamp` DATETIME(6) NOT NULL,    -- timestamp asignado por el producer al publicar
+  `kafka_offset` BIGINT NULL,                -- offset del mensaje en la partición Kafka
+  `kafka_partition` INT NULL,                -- partición Kafka de la que se leyó
+  `received_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),  -- momento de persistencia en el consumer
+  PRIMARY KEY (`id`),
+  INDEX `idx_metric` (`metric_name`),
+  INDEX `idx_received_at` (`received_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --- Restauración de la configuración de la sesión ---

@@ -1,0 +1,110 @@
+# =====================================================================
+# Infraestructura de Streaming — Apache Kafka (Entrega Final)
+#
+# Broker Kafka UNICO en modo KRaft (sin Zookeeper). Zookeeper esta
+# deprecado desde Kafka 3.5 y eliminado en Kafka 4.0; para un broker
+# unico de uso local no aporta coordinacion util y solo agrega un
+# contenedor extra.
+#
+# Compose SEPARADO del stack de Airflow (airflow/docker-compose.yaml)
+# para no afectar el pipeline batch existente (red y ciclo de vida
+# independientes).
+#
+# Ejecucion:
+#   docker compose -f kafka/docker-compose.kafka.yaml up -d
+#   docker compose -f kafka/docker-compose.kafka.yaml down
+# =====================================================================
+
+services:
+  kafka:
+    # Imagen oficial de Confluent. La 7.6.0 soporta KRaft de forma estable
+    # y trae las CLI (kafka-topics, kafka-console-consumer) para verificacion.
+    image: confluentinc/cp-kafka:7.6.0
+
+    # Nombre fijo del contenedor: permite usar `docker exec etl_kafka ...`
+    # en los comandos de verificacion del README sin depender del hash.
+    container_name: etl_kafka
+
+    # Si el contenedor cae (o se reinicia el equipo), Docker lo vuelve a
+    # levantar solo. No se reinicia si fue detenido manualmente (`down`/`stop`).
+    restart: unless-stopped
+
+    ports:
+      # Mapea el puerto 9092 del contenedor al 9092 del host. Es la unica
+      # via por la que los scripts producer/consumer (que corren en el host)
+      # alcanzan el broker. Corresponde al listener PLAINTEXT_HOST de abajo.
+      - "9092:9092"
+
+    environment:
+      # ===== Configuracion KRaft (broker + controller en el mismo nodo) =====
+
+      # Identificador unico del nodo dentro del cluster KRaft. Con un solo
+      # broker siempre es 1; debe ser consistente con el quorum de votantes.
+      KAFKA_NODE_ID: 1
+
+      # Roles que cumple este proceso. En KRaft el "controller" reemplaza a
+      # Zookeeper (gestiona metadata del cluster). Aqui un mismo nodo es
+      # broker (sirve datos) y controller (coordina), valido para 1 nodo.
+      KAFKA_PROCESS_ROLES: "broker,controller"
+
+      # Define el quorum de controllers como "<node_id>@<host>:<puerto>".
+      # Apunta a si mismo (kafka:29093) porque es el unico controller.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+
+      # Lista de listeners reservados al trafico de control (eleccion de
+      # lider, metadata). Debe coincidir con el listener CONTROLLER de abajo.
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      # ===== Listeners (puertos en los que escucha el broker) =====
+      # Se definen TRES sockets:
+      #   - PLAINTEXT      (29092): trafico interno entre brokers (red Docker).
+      #   - CONTROLLER     (29093): trafico de control de KRaft.
+      #   - PLAINTEXT_HOST (9092):  acceso desde el host (producer/consumer).
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+
+      # Direcciones que el broker ANUNCIA a los clientes para que reconecten.
+      # Un cliente del host recibe "localhost:9092" (resuelve por el puerto
+      # mapeado); un cliente interno recibiria "kafka:29092". Es el ajuste
+      # clave para que los scripts del host conecten sin error de host.
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+
+      # Protocolo de seguridad de cada listener. Todo en PLAINTEXT (sin TLS/
+      # SASL) porque es un entorno local de desarrollo; no se exponen a red.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+
+      # Listener que usan los brokers para hablar entre si. Con un solo broker
+      # es formal, pero Kafka exige declararlo.
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+
+      # ===== Parametros de cluster de un solo nodo =====
+      # Con un unico broker no hay donde replicar: el factor de replicacion de
+      # los topics internos DEBE ser 1, o el broker no arranca.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      # Minimo de replicas en sincronia para el log de transacciones; 1 por la
+      # misma razon (solo existe una replica).
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Retardo antes del primer rebalanceo de un consumer group. Se pone en 0
+      # para que el consumer empiece a recibir de inmediato en desarrollo
+      # (en produccion un valor mayor agrupa joins y evita rebalanceos seguidos).
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Permite que el topic se cree solo en el primer envio del producer, sin
+      # tener que crearlo manualmente. Comodo para esta entrega.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # ID de cluster fijo: KRaft necesita formatear el directorio de storage
+      # con un cluster id. DEBE ser un UUID válido codificado en base64 (22
+      # caracteres), no texto libre. Fijarlo hace el arranque determinista y
+      # reutiliza el volumen entre reinicios sin conflictos de metadata.
+      CLUSTER_ID: "7bXdxMCuQd2dYV7PfJndlA"
+
+    volumes:
+      # Persiste el log de Kafka (mensajes y metadata KRaft) fuera del
+      # contenedor, para no perder el topic al recrear el contenedor.
+      - kafka-data:/var/lib/kafka/data
+
+volumes:
+  # Volumen nombrado gestionado por Docker para los datos del broker.
+  kafka-data:
